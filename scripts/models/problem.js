@@ -549,7 +549,14 @@ export default class Problem {
 
     if (problemNameSelector) {
       const problemText = problemNameSelector.textContent;
-      this.slug = this.formatProblemName(problemText);
+
+      // Use the URL-based problem name directly instead of formatting the title
+      const url = window.location.href;
+      if (url.includes("leetcode.com/problems/")) {
+        this.slug = url
+          .replace("https://leetcode.com/problems/", "")
+          .split("/")[0];
+      }
 
       // Extract problem ID from the title (e.g., "1. Two Sum" -> id = "1")
       const idMatch = problemText.match(/^(\d+)\./);
@@ -584,7 +591,4 @@ export default class Problem {
     }
   }
 
-  formatProblemName(problemName) {
-    return problemName.replace(".", "-").split(" ").join("");
-  }
 }
