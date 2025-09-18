@@ -4,7 +4,6 @@ export default class Problem {
   constructor() {
     this.slug = "";
     this.difficulty = "";
-    this.description = "";
     this.problemUrl = "";
     this.code = "";
     this.language = {};
@@ -515,11 +514,10 @@ export default class Problem {
       const observer = new MutationObserver((mutations, obs) => {
         // Extract data from the iframe
         this.extractDifficultyFromDOM(iframeDocument);
-        this.extractDescriptionFromDOM(iframeDocument);
         this.extractSlugFromDOM(iframeDocument);
 
         // If all data is extracted, stop the observer
-        if (this.difficulty && this.description && this.slug) {
+        if (this.difficulty && this.slug) {
           obs.disconnect();
           document.body.removeChild(iframe);
         }
@@ -582,13 +580,5 @@ export default class Problem {
     }
   }
 
-  async extractDescriptionFromDOM(iframeDocument) {
-    const problemDescription = iframeDocument.querySelector(
-      'div[data-track-load="description_content"]'
-    );
-    if (problemDescription) {
-      this.description = problemDescription.textContent;
-    }
-  }
 
 }

@@ -130,16 +130,15 @@ export default class GithubService {
   }
 
   /**
-   * Create a new file in the GitHub repository with optional README generation.
+   * Create a new file in the GitHub repository.
    *
    * Algorithm:
    * 1. Validate problem object exists
    * 2. Build appropriate GitHub URL for the target file
    * 3. Create the main solution file with formatted code
    * 4. Handle file conflicts gracefully (422 status for existing files)
-   * 5. Create README file if problem description is available
-   * 6. Update difficulty statistics if not in sync mode
-   * 7. Log all operations with instance ID for debugging
+   * 5. Update difficulty statistics if not in sync mode
+   * 6. Log all operations with instance ID for debugging
    *
    * @param {boolean} isSyncing - Whether this is part of a bulk sync operation
    * @returns {Promise<Response>} GitHub API response object
@@ -151,7 +150,6 @@ export default class GithubService {
     }
 
     const codeUrl = this.buildGitHubUrl(isSyncing);
-    const readmeUrl = this.buildGitHubUrl(isSyncing, "README.md");
 
     const codeBody = {
       message: `Create solution file`,
@@ -182,42 +180,19 @@ export default class GithubService {
       const resultJson = await result.json();
 
       if (result.status === 201) {
-        try {
-          // Create README only if description exists and is meaningful
-          if (this.problem.description && this.problem.description.trim().length > 0) {
-            const readmeBody = {
-              message: `Add README file`,
-              content: this.utf8ToBase64(this.problem.description),
-            };
-
-            const readmeResult = await this.fetchWithAuth(
-              readmeUrl,
-              "PUT",
-              readmeBody
-            );
-
-            // Don't fail main operation if README creation fails
-            if (!readmeResult.ok) {
-              // README creation failed but continue with main operation
-            }
-          }
-        } catch (readmeError) {
-          // Don't fail main file creation due to README issues
-        } finally {
-          // Update statistics only in normal mode (not during bulk sync)
-          if (!isSyncing) {
-            try {
-              chrome.runtime.sendMessage({
-                type: "updateDifficultyStats",
-                difficulty: this.problem.difficulty,
-              }, (response) => {
-                if (chrome.runtime.lastError) {
-                  // Handle messaging errors gracefully
-                }
-              });
-            } catch (messageError) {
-              // Statistics update failed but don't fail the main operation
-            }
+        // Update statistics only in normal mode (not during bulk sync)
+        if (!isSyncing) {
+          try {
+            chrome.runtime.sendMessage({
+              type: "updateDifficultyStats",
+              difficulty: this.problem.difficulty,
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                // Handle messaging errors gracefully
+              }
+            });
+          } catch (messageError) {
+            // Statistics update failed but don't fail the main operation
           }
         }
       }
