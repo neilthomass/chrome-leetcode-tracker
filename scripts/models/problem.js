@@ -25,34 +25,9 @@ export default class Problem {
   }
 
   extractIdFromCurrentPage() {
-    // Try to extract ID from page title or DOM
-    try {
-      // Look for the problem title in the main content area
-      const titleElements = document.querySelectorAll('h1, h2, h3, [data-cy="question-title"], .css-v3d350, .mr-2');
-
-      for (const element of titleElements) {
-        if (element && element.textContent) {
-          const text = element.textContent.trim();
-          const idMatch = text.match(/^(\d+)\./);
-          if (idMatch) {
-            this.id = idMatch[1];
-            console.log('🔍 LeetCode Tracker: Extracted problem ID from page:', this.id);
-            break;
-          }
-        }
-      }
-
-      // Fallback: extract from URL if it contains the pattern
-      if (!this.id) {
-        const urlMatch = window.location.pathname.match(/\/problems\/(\d+)-/);
-        if (urlMatch) {
-          this.id = urlMatch[1];
-          console.log('🔍 LeetCode Tracker: Extracted problem ID from URL:', this.id);
-        }
-      }
-    } catch (error) {
-      console.log('Could not extract problem ID from current page:', error);
-    }
+    // Note: Problem ID will be extracted from submission API data
+    // This method is kept for any additional page-based extraction if needed
+    console.log('🔍 LeetCode Tracker: Problem ID will be extracted from submission API data');
   }
 
   setProblemUrlFromCurrentPage() {
@@ -64,6 +39,7 @@ export default class Problem {
         .split("/")[0];
 
       this.problemUrl = `/problems/${problemName}/`;
+      this.slug = problemName; // Set the slug for GitHub file path
     }
   }
 
@@ -362,6 +338,12 @@ export default class Problem {
         // Store submission ID for reference
         if (apiData.submission_id) {
           this.submissionId = apiData.submission_id;
+        }
+
+        // Extract problem ID from submission data
+        if (apiData.question_id) {
+          this.id = apiData.question_id.toString();
+          console.log('🔍 LeetCode Tracker: Extracted problem ID from submission API:', this.id);
         }
 
         console.log('Extracted submission stats from API:', {

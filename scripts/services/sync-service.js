@@ -45,12 +45,31 @@ export default class SyncService {
     if (!chrome?.storage?.local) {
       return {
         success: false,
-        message: "Chrome storage API unavailable. Please reload the extension.",
+        message: "Chrome storage API unavailable. Please reload the extension or ensure this is running in the proper context.",
       };
     }
 
-    const { leetcode_tracker_sync_in_progress } =
-      await chrome.storage.local.get("leetcode_tracker_sync_in_progress");
+    // Additional validation for proper extension context
+    try {
+      // Test chrome.storage access
+      await chrome.storage.local.get("test");
+    } catch (error) {
+      return {
+        success: false,
+        message: "Chrome storage access denied. Extension context error: " + error.message,
+      };
+    }
+
+    let leetcode_tracker_sync_in_progress = false;
+    try {
+      const result = await chrome.storage.local.get("leetcode_tracker_sync_in_progress");
+      leetcode_tracker_sync_in_progress = result.leetcode_tracker_sync_in_progress;
+    } catch (error) {
+      return {
+        success: false,
+        message: "Failed to check sync status: " + error.message,
+      };
+    }
 
     if (leetcode_tracker_sync_in_progress) {
       return {
@@ -59,12 +78,19 @@ export default class SyncService {
       };
     }
 
-    await chrome.storage.local.set({
-      leetcode_tracker_sync_in_progress: true,
-      leetcode_tracker_last_sync_status: "in_progress",
-      leetcode_tracker_last_sync_message: "Synchronization started...",
-      leetcode_tracker_last_sync_date: new Date().toISOString(),
-    });
+    try {
+      await chrome.storage.local.set({
+        leetcode_tracker_sync_in_progress: true,
+        leetcode_tracker_last_sync_status: "in_progress",
+        leetcode_tracker_last_sync_message: "Synchronization started...",
+        leetcode_tracker_last_sync_date: new Date().toISOString(),
+      });
+    } catch (error) {
+      return {
+        success: false,
+        message: "Failed to set sync status: " + error.message,
+      };
+    }
 
     this.isSyncing = true;
 

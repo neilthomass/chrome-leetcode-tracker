@@ -8,6 +8,10 @@ export default class ConfigurationService {
    */
   async getChromeStorageConfig(properties) {
     return new Promise((resolve) => {
+      if (!chrome?.storage?.local) {
+        resolve({});
+        return;
+      }
       chrome.storage.local.get(properties, resolve);
     });
   }
@@ -18,6 +22,10 @@ export default class ConfigurationService {
    */
   async getDataConfig() {
     return new Promise((resolve) => {
+      if (!chrome?.storage?.local) {
+        resolve(null);
+        return;
+      }
       chrome.storage.local.get("leetcode_tracker_data_config", (result) => {
         resolve(result.leetcode_tracker_data_config);
       });

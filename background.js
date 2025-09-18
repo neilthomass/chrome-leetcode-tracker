@@ -183,14 +183,14 @@ class GitHubService {
 
   /**
    * Fetch all LeetCode problems from the connected GitHub repository.
-   * Filters repository contents to identify valid problem files.
+   * Searches through language folders to identify valid problem files.
    *
    * Algorithm:
    * 1. Build GitHub API URL for repository contents
-   * 2. Fetch repository file list via GitHub API
-   * 3. Filter files matching LeetCode naming pattern (e.g., "1-TwoSum")
-   * 4. Extract problem IDs and convert to LeetCode format
-   * 5. Return structured problem data for statistics calculation
+   * 2. Fetch repository folder list via GitHub API
+   * 3. For each language folder, fetch the files inside
+   * 4. Filter files matching new LeetCode naming pattern (e.g., "0001 two-sum.py")
+   * 5. Extract problem IDs and return structured problem data for statistics calculation
    *
    * @returns {Promise<Array<Object>>} Array of problem objects with IDs
    */
@@ -210,15 +210,38 @@ class GitHubService {
       const data = await response.json();
       console.log('📁 LeetCode Tracker: Found repository contents:', data.length, 'items');
 
-      const problems = data
-        .filter((problem) => /^\d+-[A-Z]/.test(problem.name))
-        .map((problem) => ({
-          originalName: problem.name,
-          questionId: this.convertGithubToLeetCodeSlug(problem.name),
-        }));
+      const allProblems = [];
 
-      console.log('✅ LeetCode Tracker: Filtered problems:', problems.length, 'LeetCode problems found');
-      return problems;
+      // Look for language folders (directories)
+      const languageFolders = data.filter(item => item.type === 'dir');
+      console.log('🔍 LeetCode Tracker: Found language folders:', languageFolders.map(f => f.name));
+
+      // Fetch problems from each language folder
+      for (const folder of languageFolders) {
+        try {
+          const folderUrl = `${url}${folder.name}`;
+          const folderResponse = await fetch(folderUrl);
+
+          if (folderResponse.ok) {
+            const folderData = await folderResponse.json();
+            const problems = folderData
+              .filter((file) => file.type === 'file' && /^\d{4}\s+.+\..+$/.test(file.name))
+              .map((file) => ({
+                originalName: file.name,
+                questionId: this.convertGithubToLeetCodeSlug(file.name),
+                language: folder.name,
+              }));
+
+            allProblems.push(...problems);
+            console.log(`📁 LeetCode Tracker: Found ${problems.length} problems in ${folder.name}`);
+          }
+        } catch (error) {
+          console.error(`❌ LeetCode Tracker: Error fetching ${folder.name} folder:`, error);
+        }
+      }
+
+      console.log('✅ LeetCode Tracker: Total problems found:', allProblems.length);
+      return allProblems;
     } catch (error) {
       console.error('❌ LeetCode Tracker: Error fetching problems:', error);
       return [];
@@ -227,14 +250,19 @@ class GitHubService {
 
   /**
    * Convert GitHub filename to LeetCode problem ID.
-   * Extracts the numeric problem ID from the filename format.
+   * Extracts the numeric problem ID from the new filename format.
    *
-   * @param {string} githubFileName - GitHub file name (e.g., "1-TwoSum.js")
+   * @param {string} githubFileName - GitHub file name (e.g., "0001 two-sum.py")
    * @returns {string} LeetCode problem ID (e.g., "1")
    */
   convertGithubToLeetCodeSlug(githubFileName) {
-    const [number] = githubFileName.split("-");
-    return number;
+    // Extract the 4-digit number from the beginning of the filename
+    const match = githubFileName.match(/^(\d{4})\s+/);
+    if (match) {
+      // Convert to number to remove leading zeros, then back to string
+      return parseInt(match[1], 10).toString();
+    }
+    return "";
   }
 }
 

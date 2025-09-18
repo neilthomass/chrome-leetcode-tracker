@@ -566,11 +566,22 @@ export default class GithubService {
       throw new Error("No problem set for URL building");
     }
 
-    // Multiple submissions is always disabled, so no date/time suffix or version path
-    const fileName =
-      file ||
-      `${this.problem.slug}${this.problem.language.extension}`;
-    const versionPath = "";
+    if (!this.problem.slug) {
+      throw new Error("Problem slug is required for GitHub URL building");
+    }
+
+    if (!this.problem.id) {
+      throw new Error("Problem ID is required for GitHub URL building. ID should be extracted from submission API data.");
+    }
+
+    if (!this.problem.language || !this.problem.language.langName) {
+      throw new Error("Problem language is required for GitHub URL building");
+    }
+
+    // Format: repo/codingLang/0001 two-sum.py
+    const paddedId = this.problem.id.toString().padStart(4, '0');
+    const fileName = file || `${paddedId} ${this.problem.slug}${this.problem.language.extension}`;
+    const languageFolder = this.problem.language.langName.toLowerCase();
 
     // Parse repository string to get username and repo name
     const parsedRepo = this.parseRepositoryString(this.userConfig.leetcode_tracker_repo);
@@ -578,8 +589,9 @@ export default class GithubService {
       throw new Error("Invalid repository configuration");
     }
 
-    return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${this.problem.slug}${versionPath}/${fileName}`;
+    return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${languageFolder}/${fileName}`;
   }
+
 
   /**
    * Parse repository string to extract username and repository name.
