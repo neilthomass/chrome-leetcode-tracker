@@ -24,6 +24,7 @@ const DOM = {
     "comment-submission-checkbox"
   ),
   syncButton: document.getElementById("sync-button"),
+  manualPushButton: document.getElementById("manual-push-button"),
   syncStatus: document.getElementById("sync-status"),
   syncTime: document.getElementById("sync-time"),
   stats: {
@@ -216,6 +217,7 @@ class PopupManager {
       this.toggleCommentSubmissionSetting.bind(this)
     );
     DOM.syncButton.addEventListener("click", this.startManualSync.bind(this));
+    DOM.manualPushButton.addEventListener("click", this.handleManualPush.bind(this));
 
     // Listen for statistics updates from background script
     chrome.runtime.onMessage.addListener((message) => {
@@ -254,7 +256,11 @@ class PopupManager {
 `;
     document.head.appendChild(style);
 
-    chrome.runtime.sendMessage({ type: "syncSolvedProblems" });
+    chrome.runtime.sendMessage({ type: "syncSolvedProblems" }, (response) => {
+      if (chrome.runtime.lastError) {
+        // Handle messaging errors gracefully
+      }
+    });
 
     this.updateSyncStatus();
   }
@@ -456,7 +462,12 @@ class PopupManager {
       chrome.runtime.sendMessage(
         { type: "requestInitialStats" },
         (response) => {
-          resolve(response);
+          if (chrome.runtime.lastError) {
+            // Handle messaging errors gracefully
+            resolve(null);
+          } else {
+            resolve(response);
+          }
         }
       );
     });
@@ -504,7 +515,16 @@ class PopupManager {
    */
   async handleAuthentication() {
     try {
-      const data = await chrome.runtime.sendMessage({ type: "getDataConfig" });
+      const data = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: "getDataConfig" }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+
       const url = `${data.URL}?client_id=${data.CLIENT_ID}&redirect_uri${
         data.REDIRECT_URL
       }&scope=${data.SCOPES.join(" ")}`;
@@ -560,8 +580,14 @@ class PopupManager {
   async linkRepo(githubAuthData, repositoryName) {
     const { leetcode_tracker_token, leetcode_tracker_username } =
       githubAuthData;
-    const dataConfig = await chrome.runtime.sendMessage({
-      type: "getDataConfig",
+    const dataConfig = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "getDataConfig" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(response);
+        }
+      });
     });
 
     try {
@@ -612,6 +638,44 @@ class PopupManager {
       DOM.hookRepo.style.display = "block";
     } catch (error) {
       // Handle unlink errors gracefully
+    }
+  }
+
+  /**
+   * Handle manual push of current LeetCode solution to GitHub.
+   * Sends a message to the active tab to trigger manual submission handling.
+   */
+  async handleManualPush() {
+    try {
+      DOM.manualPushButton.disabled = true;
+      DOM.manualPushButton.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="spin" viewBox="0 0 16 16"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/></svg><span style="margin-left: 5px">Pushing...</span>';
+
+      // Get the active tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab || !tab.url || !tab.url.includes('leetcode.com')) {
+        throw new Error('Please navigate to a LeetCode problem page first');
+      }
+
+      // Send message to content script to handle manual push
+      chrome.tabs.sendMessage(tab.id, { type: "manualPush" }, (response) => {
+        setTimeout(() => {
+          DOM.manualPushButton.disabled = false;
+          DOM.manualPushButton.innerHTML =
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5"/><path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0z"/></svg><span style="margin-left: 5px">Push</span>';
+        }, 2000);
+
+        if (chrome.runtime.lastError) {
+          // Handle messaging errors gracefully
+          console.error('Manual push failed:', chrome.runtime.lastError.message);
+        }
+      });
+    } catch (error) {
+      DOM.manualPushButton.disabled = false;
+      DOM.manualPushButton.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5"/><path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0z"/></svg><span style="margin-left: 5px">Push</span>';
+      console.error('Manual push error:', error.message);
     }
   }
 }

@@ -16,15 +16,20 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["unlimitedStorage", "storage"],
+  "permissions": ["unlimitedStorage", "storage", "activeTab"],
   "host_permissions": [
     "https://leetcode.com/*",
     "https://api.github.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/*", "https://github.com/*"],
-      "js": ["scripts/authorize.js", "scripts/loader.js"],
+      "matches": ["https://leetcode.com/*"],
+      "js": ["scripts/loader.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["scripts/authorize.js"],
       "run_at": "document_idle"
     }
   ],

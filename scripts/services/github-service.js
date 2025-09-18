@@ -187,7 +187,7 @@ export default class GithubService {
       if (result.status === 201) {
         try {
           // Create README only if description exists and is meaningful
-          if (this.problem.description && this.problem.description.trim()) {
+          if (this.problem.description && this.problem.description.trim().length > 0) {
             const readmeBody = {
               message: `Add README for ${this.problem.slug}`,
               content: this.utf8ToBase64(this.problem.description),
@@ -213,6 +213,10 @@ export default class GithubService {
               chrome.runtime.sendMessage({
                 type: "updateDifficultyStats",
                 difficulty: this.problem.difficulty,
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  // Handle messaging errors gracefully
+                }
               });
             } catch (messageError) {
               // Statistics update failed but don't fail the main operation
@@ -278,12 +282,12 @@ export default class GithubService {
 
   /**
    * Format the problem code with appropriate headers and comments.
-   * Generates language-specific comment formats and includes metadata.
+   * Generates language-specific comment formats and includes comprehensive metadata.
    *
    * Algorithm:
    * 1. Validate problem and code availability
    * 2. Get appropriate comment format for the programming language
-   * 3. Create header with last updated timestamp
+   * 3. Create comprehensive header with metadata
    * 4. Add user comment if provided (handles both single and multi-line)
    * 5. Append the actual solution code
    *
@@ -302,14 +306,52 @@ export default class GithubService {
       this.problem.language.extension
     );
 
-    // Create header with timestamp
-    let header = `${commentFormat.line} Last updated: ${currentDate}\n`;
+    // Create comprehensive metadata header in exact format requested
+    let header = `${commentFormat.start}\n`;
+    header += `${commentFormat.linePrefix}Problem: ${this.problem.slug || 'unknown'}\n`;
+    header += `${commentFormat.linePrefix}Last updated: ${currentDate}\n`;
+
+    // Add problem URL if available
+    if (this.problem.problemUrl) {
+      header += `${commentFormat.linePrefix}URL: https://leetcode.com${this.problem.problemUrl}\n`;
+    }
+
+    // Add difficulty
+    if (this.problem.difficulty) {
+      const difficulty = this.problem.difficulty.charAt(0).toUpperCase() + this.problem.difficulty.slice(1);
+      header += `${commentFormat.linePrefix}Difficulty: ${difficulty}\n`;
+    }
+
+    // Add performance metrics if available
+    if (this.problem.runtime) {
+      header += `${commentFormat.linePrefix}Runtime: ${this.problem.runtime}`;
+      if (this.problem.runtimePercentile) {
+        header += ` (Beats ${this.problem.runtimePercentile})`;
+      }
+      header += `\n`;
+    }
+
+    if (this.problem.memory) {
+      header += `${commentFormat.linePrefix}Memory: ${this.problem.memory}`;
+      if (this.problem.memoryPercentile) {
+        header += ` (Beats ${this.problem.memoryPercentile})`;
+      }
+      header += `\n`;
+    }
+
+    // Add language
+    if (this.problem.language && this.problem.language.langName) {
+      header += `${commentFormat.linePrefix}Language: ${this.problem.language.langName}\n`;
+    }
+
+    header += `${commentFormat.end}\n\n`;
 
     // Add user comment if provided
     if (this.comment && this.comment.trim()) {
       // Handle multi-line comments with proper formatting
       if (this.comment.includes("\n")) {
         header += `${commentFormat.start}\n`;
+        header += `${commentFormat.linePrefix}Solution Notes:\n`;
 
         // Format each line of the comment
         this.comment.split("\n").forEach((line) => {
@@ -319,7 +361,7 @@ export default class GithubService {
         header += `${commentFormat.end}\n\n`;
       } else {
         // Single line comment
-        header += `${commentFormat.line} ${this.comment}\n`;
+        header += `${commentFormat.line} Solution Notes: ${this.comment}\n\n`;
       }
     }
 
@@ -329,20 +371,122 @@ export default class GithubService {
 
   /**
    * Get the appropriate comment format for different programming languages.
-   * Supports both single-line and multi-line comment styles.
+   * Supports both single-line and multi-line comment styles for all LeetCode languages.
    *
    * @param {string} extension - File extension (e.g., ".js", ".py", ".java")
    * @returns {Object} Object containing comment format strings for the language
    */
   getCommentFormat(extension) {
     switch (extension) {
+      // Python (Python/Python3)
       case ".py":
         return {
           line: "#",
-          start: "'''",
-          end: "'''",
+          start: '"""',
+          end: '"""',
           linePrefix: "",
         };
+
+      // C++
+      case ".cpp":
+        return {
+          line: "//",
+          start: "/*",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Java
+      case ".java":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // C
+      case ".c":
+        return {
+          line: "//", // C99+ supports // comments
+          start: "/*",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // C#
+      case ".cs":
+        return {
+          line: "//",
+          start: "/*",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // JavaScript
+      case ".js":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // TypeScript
+      case ".ts":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // PHP
+      case ".php":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Swift
+      case ".swift":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Kotlin
+      case ".kt":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Dart
+      case ".dart":
+        return {
+          line: "//",
+          start: "/**",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Go
+      case ".go":
+        return {
+          line: "//",
+          start: "/*",
+          end: " */",
+          linePrefix: " * ",
+        };
+
+      // Ruby
       case ".rb":
         return {
           line: "#",
@@ -350,71 +494,67 @@ export default class GithubService {
           end: "=end",
           linePrefix: "",
         };
-      case ".php":
-        return {
-          line: "//",
-          start: "/*",
-          end: "*/",
-          linePrefix: " * ",
-        };
-      case ".js":
-      case ".ts":
-      case ".kt":
-      case ".java":
-      case ".c":
-      case ".cpp":
-      case ".cs":
-      case ".swift":
+
+      // Scala
       case ".scala":
-      case ".dart":
-      case ".go":
         return {
           line: "//",
-          start: "/*",
-          end: "*/",
+          start: "/**",
+          end: " */",
           linePrefix: " * ",
         };
+
+      // Rust
       case ".rs":
         return {
           line: "//",
-          start: "/*",
-          end: "*/",
+          start: "/**",
+          end: " */",
           linePrefix: " * ",
         };
-      case ".ex":
-        return {
-          line: "#",
-          start: '@doc """',
-          end: '"""',
-          linePrefix: "",
-        };
-      case ".erl":
-        return {
-          line: "%",
-          start: "%% ---",
-          end: "%% ---",
-          linePrefix: "%% ",
-        };
+
+      // Racket
       case ".rkt":
         return {
           line: ";",
           start: "#|",
           end: "|#",
-          linePrefix: " ",
+          linePrefix: "",
         };
+
+      // Erlang
+      case ".erl":
+        return {
+          line: "%",
+          start: "%%% ",
+          end: "",
+          linePrefix: "%%% ",
+        };
+
+      // Elixir
+      case ".ex":
+        return {
+          line: "#",
+          start: "@doc \"\"\"",
+          end: "\"\"\"",
+          linePrefix: "",
+        };
+
+      // SQL (MySQL/PostgreSQL)
       case ".sql":
         return {
           line: "--",
           start: "/*",
-          end: "*/",
+          end: " */",
           linePrefix: " * ",
         };
+
       default:
         // Default to C-style comments for unknown languages
         return {
           line: "//",
           start: "/*",
-          end: "*/",
+          end: " */",
           linePrefix: " * ",
         };
     }

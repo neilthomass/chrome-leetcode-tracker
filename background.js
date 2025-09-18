@@ -112,7 +112,10 @@ class LeetCodeStateManager {
         data: this.getStats(),
       })
       .catch(() => {
-        // Silently handle messaging errors (e.g., when popup is closed)
+        // Check for runtime.lastError to clear it
+        if (chrome.runtime.lastError) {
+          // Silently handle messaging errors (e.g., when popup is closed)
+        }
       });
   }
 }
@@ -244,19 +247,34 @@ class LeetCodeTrackerController {
           this.saveUserInfos(request);
           sendResponse({ success: true });
         },
-        syncSolvedProblems: () => {
-          this.startSync();
-          sendResponse({ status: "started" });
+        syncSolvedProblems: async () => {
+          try {
+            await this.startSync();
+            sendResponse({ status: "completed" });
+          } catch (error) {
+            sendResponse({ status: "failed", error: error.message });
+          }
         },
-        requestInitialStats: () => {
-          // Always recalculate counter when popup requests stats
-          this.initCounter();
-          sendResponse(null); // Send null initially, updated stats will be broadcast
+        requestInitialStats: async () => {
+          try {
+            // Always recalculate counter when popup requests stats
+            await this.initCounter();
+            sendResponse(null); // Send null initially, updated stats will be broadcast
+          } catch (error) {
+            sendResponse({ status: "failed", error: error.message });
+          }
         },
       };
 
       if (handlers[request.type]) {
-        handlers[request.type]();
+        const result = handlers[request.type]();
+        // If the handler returns a promise, wait for it
+        if (result instanceof Promise) {
+          result.catch((error) => {
+            sendResponse({ status: "failed", error: error.message });
+          });
+          return true; // Keep message channel open for async responses
+        }
       }
 
       return true; // Keep message channel open for async responses

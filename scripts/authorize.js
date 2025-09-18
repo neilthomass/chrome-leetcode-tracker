@@ -39,6 +39,10 @@ async function getUserInfo(accessToken) {
     type: "saveUserInfos",
     token: accessToken,
     username: data.login,
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      // Handle messaging errors gracefully
+    }
   });
 }
 
@@ -48,9 +52,13 @@ async function getUserInfo(accessToken) {
 if (window.location.host === "github.com") {
   const code = window.location.search.split("=")[1];
 
-  chrome.runtime.sendMessage({ type: "getDataConfig" }).then((response) => {
-    dataConfig = response;
+  chrome.runtime.sendMessage({ type: "getDataConfig" }, (response) => {
+    if (chrome.runtime.lastError) {
+      // Handle messaging errors gracefully
+      return;
+    }
 
+    dataConfig = response;
     getAccessToken(code);
   });
 }

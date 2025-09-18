@@ -17,8 +17,25 @@
       this.problem = new Problem();
       this.githubService = new GithubService();
       this.route = new RouteService(() => this.init());
+      this.setupMessageListener();
       this.init();
     }
+
+    /**
+     * Set up Chrome extension message listener for manual push requests.
+     * Handles messages from the popup to trigger manual submission processing.
+     */
+    setupMessageListener() {
+      if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+          if (request.type === "manualPush") {
+            this.handleManualSubmission();
+            sendResponse({ success: true });
+          }
+        });
+      }
+    }
+
 
     /**
      * Initialize or reinitialize the tracker for the current problem page.
@@ -80,43 +97,61 @@
      * 3. Check user settings for comment functionality
      * 4. Show comment popup if enabled, collect user input
      * 5. Extract language and code information from current DOM state
-     * 6. Submit complete solution data to GitHub via GithubService
+     * 6. Use API data if available, otherwise fall back to DOM extraction
+     * 7. Submit complete solution data to GitHub via GithubService
      */
     async handleSubmission() {
-      await DOMUtils.waitForElement(domElements.submissionResult);
-      const accepted = document.querySelector(domElements.submissionResult);
-      if (accepted && accepted.textContent === "Accepted") {
-        let isCommentEnabled = false;
-        try {
-          if (typeof chrome !== "undefined" && chrome.storage?.local) {
-            const result = await chrome.storage.local.get(
-              "leetcode_tracker_comment_submission"
-            );
-            isCommentEnabled =
-              !!result?.leetcode_tracker_comment_submission;
-          }
-        } catch (_) {
-          // Fallback: leave isCommentEnabled false if storage not accessible
-        }
+      this.isProcessingSubmission = true;
 
-        const userComment = isCommentEnabled ? await this.showCommentPopup() : "";
-        this.problem.extractLanguageFromDOM();
-        this.problem.extractCodeFromDOM();
-        try {
-          await this.githubService.submitToGitHub(this.problem, userComment);
-          this.showToast(
-            `Problem ${this.problem.slug || ""} synced successfully`,
-            "success"
-          );
-        } catch (error) {
-          const message = (error && error.message) ? error.message.split("\n")[0].slice(0, 140) : "Unknown error";
-          this.showToast(
-            `Problem ${this.problem.slug || ""} sync failed: ${message}`,
-            "error"
-          );
+      try {
+        await DOMUtils.waitForElement(domElements.submissionResult);
+        const accepted = document.querySelector(domElements.submissionResult);
+        if (accepted && accepted.textContent === "Accepted") {
+          console.log("🎉 LeetCode Tracker: Problem accepted!", {
+            problemSlug: this.problem.slug,
+            problemId: this.problem.id,
+            timestamp: new Date().toISOString()
+          });
+
+          let isCommentEnabled = false;
+          try {
+            if (typeof chrome !== "undefined" && chrome.storage?.local) {
+              const result = await chrome.storage.local.get(
+                "leetcode_tracker_comment_submission"
+              );
+              isCommentEnabled =
+                !!result?.leetcode_tracker_comment_submission;
+            }
+          } catch (_) {
+            // Fallback: leave isCommentEnabled false if storage not accessible
+          }
+
+          const userComment = isCommentEnabled ? await this.showCommentPopup() : "";
+          this.problem.extractLanguageFromDOM();
+          this.problem.extractCodeFromDOM();
+
+          // Extract submission stats using the direct API approach
+          await this.problem.extractSubmissionStatsFromURL();
+
+          try {
+            await this.githubService.submitToGitHub(this.problem, userComment);
+            this.showToast(
+              `Problem ${this.problem.slug || ""} synced successfully`,
+              "success"
+            );
+          } catch (error) {
+            const message = (error && error.message) ? error.message.split("\n")[0].slice(0, 140) : "Unknown error";
+            this.showToast(
+              `Problem ${this.problem.slug || ""} sync failed: ${message}`,
+              "error"
+            );
+          }
         }
+      } finally {
+        this.isProcessingSubmission = false;
       }
     }
+
 
     /**
      * Display a transient toast notification on the LeetCode page.
@@ -402,5 +437,59 @@
           }
         });
       });
+    }
+
+    /**
+     * Handle manual submission by simulating an accepted solution.
+     * Extracts current problem data and code, then pushes to GitHub without waiting for actual submission.
+     *
+     * Algorithm:
+     * 1. Load current problem data from DOM
+     * 2. Extract language and code from current editor state
+     * 3. Check user settings for comment functionality
+     * 4. Show comment popup if enabled, collect user input
+     * 5. Submit solution data to GitHub via GithubService
+     */
+    async handleManualSubmission() {
+      console.log("🔧 LeetCode Tracker: Manual push initiated", {
+        problemSlug: this.problem.slug,
+        problemId: this.problem.id,
+        timestamp: new Date().toISOString()
+      });
+
+      try {
+        this.problem.loadProblemFromDOM();
+
+        let isCommentEnabled = false;
+        try {
+          if (typeof chrome !== "undefined" && chrome.storage?.local) {
+            const result = await chrome.storage.local.get(
+              "leetcode_tracker_comment_submission"
+            );
+            isCommentEnabled = !!result?.leetcode_tracker_comment_submission;
+          }
+        } catch (_) {
+          // Fallback: leave isCommentEnabled false if storage not accessible
+        }
+
+        const userComment = isCommentEnabled ? await this.showCommentPopup() : "";
+        this.problem.extractLanguageFromDOM();
+        this.problem.extractCodeFromDOM();
+
+        // Extract submission stats using the direct API approach
+        await this.problem.extractSubmissionStatsFromURL();
+
+        await this.githubService.submitToGitHub(this.problem, userComment);
+        this.showToast(
+          `Problem ${this.problem.slug || ""} pushed successfully`,
+          "success"
+        );
+      } catch (error) {
+        const message = (error && error.message) ? error.message.split("\n")[0].slice(0, 140) : "Unknown error";
+        this.showToast(
+          `Problem ${this.problem.slug || ""} push failed: ${message}`,
+          "error"
+        );
+      }
     }
   }

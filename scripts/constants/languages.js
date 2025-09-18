@@ -2,7 +2,7 @@ export const baseLanguages = {
   cpp: { langName: "cpp", extension: ".cpp" },
   java: { langName: "java", extension: ".java" },
   python: { langName: "python", extension: ".py" },
-  python3: { langName: "python", extension: ".py" },
+  python3: { langName: "python3", extension: ".py" },
   c: { langName: "c", extension: ".c" },
   csharp: { langName: "csharp", extension: ".cs" },
   javascript: { langName: "javascript", extension: ".js" },
@@ -27,4 +27,7 @@ export const alternativeNames = {
   "c#": "csharp",
   go: "golang",
   postgres: "postgresql",
+  // Handle various Python naming conventions
+  "python 3": "python3",
+  "py3": "python3",
 };
