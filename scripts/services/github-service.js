@@ -107,10 +107,9 @@ export default class GithubService {
    */
   async updateFile(existingFile) {
     const url = this.buildGitHubUrl(false);
-    const currentDate = new Date().toLocaleString();
 
     const body = {
-      message: `File updated at ${currentDate}`,
+      message: this.generateCommitMessage(true),
       content: btoa(this.getFormattedCode()),
       sha: existingFile.sha, // Required for updates to prevent conflicts
     };
@@ -152,7 +151,7 @@ export default class GithubService {
     const codeUrl = this.buildGitHubUrl(isSyncing);
 
     const codeBody = {
-      message: `Create solution file`,
+      message: this.generateCommitMessage(false),
       content: btoa(this.getFormattedCode()),
     };
 
@@ -592,6 +591,49 @@ export default class GithubService {
     return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${languageFolder}/${fileName}`;
   }
 
+
+  /**
+   * Generate an informative commit message with problem details.
+   * @param {boolean} isUpdate - Whether this is an update (true) or new creation (false)
+   * @returns {string} Formatted commit message
+   */
+  generateCommitMessage(isUpdate = false) {
+    if (!this.problem) {
+      return isUpdate ? "Update solution file" : "Add solution file";
+    }
+
+    const action = isUpdate ? "Update" : "Add";
+    const paddedId = this.problem.id ? this.problem.id.toString().padStart(4, '0') : "XXXX";
+    const problemName = this.problem.slug ? this.problem.slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : "Unknown Problem";
+    const language = this.problem.language?.langName || "Unknown";
+    const difficulty = this.problem.difficulty ? this.problem.difficulty.charAt(0).toUpperCase() + this.problem.difficulty.slice(1) : "";
+
+    let message = `${action} solution: ${paddedId}. ${problemName}`;
+
+    // Add language and difficulty info
+    const details = [];
+    if (language !== "Unknown") details.push(`Language: ${language}`);
+    if (difficulty) details.push(`Difficulty: ${difficulty}`);
+
+    // Add performance metrics if available
+    if (this.problem.runtime && this.problem.runtimePercentile) {
+      details.push(`Runtime: ${this.problem.runtime} (${this.problem.runtimePercentile})`);
+    } else if (this.problem.runtime) {
+      details.push(`Runtime: ${this.problem.runtime}`);
+    }
+
+    if (this.problem.memory && this.problem.memoryPercentile) {
+      details.push(`Memory: ${this.problem.memory} (${this.problem.memoryPercentile})`);
+    } else if (this.problem.memory) {
+      details.push(`Memory: ${this.problem.memory}`);
+    }
+
+    if (details.length > 0) {
+      message += `\n\n${details.join(' | ')}`;
+    }
+
+    return message;
+  }
 
   /**
    * Parse repository string to extract username and repository name.
