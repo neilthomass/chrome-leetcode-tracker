@@ -17,14 +17,11 @@ export default class Problem {
   }
 
   loadProblemFromDOM() {
-    const url = this.getDescriptionUrl();
-
     // Try to extract ID from current page first
     this.extractIdFromCurrentPage();
 
-    if (url) {
-      this.extractProblemInfos(url);
-    }
+    // Set the problem URL from the current page
+    this.setProblemUrlFromCurrentPage();
   }
 
   extractIdFromCurrentPage() {
@@ -58,7 +55,7 @@ export default class Problem {
     }
   }
 
-  getDescriptionUrl() {
+  setProblemUrlFromCurrentPage() {
     const url = window.location.href;
 
     if (url.includes("leetcode.com/problems/")) {
@@ -67,10 +64,7 @@ export default class Problem {
         .split("/")[0];
 
       this.problemUrl = `/problems/${problemName}/`;
-      return `https://leetcode.com/problems/${problemName}/description/`;
     }
-
-    return "";
   }
 
   extractLanguageFromDOM() {
@@ -493,92 +487,6 @@ export default class Problem {
     }
   }
 
-  extractProblemInfos(url) {
-    const iframe = document.createElement("iframe");
-
-    // Invisible iframe
-    iframe.style.position = "absolute";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "none";
-    iframe.style.opacity = "0";
-    iframe.style.pointerEvents = "none";
-
-    iframe.src = url;
-
-    // Observer to retrieve data from the iframe
-    iframe.onload = () => {
-      const iframeDocument =
-        iframe.contentDocument || iframe.contentWindow.document;
-
-      const observer = new MutationObserver((mutations, obs) => {
-        // Extract data from the iframe
-        this.extractDifficultyFromDOM(iframeDocument);
-        this.extractSlugFromDOM(iframeDocument);
-
-        // If all data is extracted, stop the observer
-        if (this.difficulty && this.slug) {
-          obs.disconnect();
-          document.body.removeChild(iframe);
-        }
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-      });
-
-      // Stop the observer after 3 seconds and remove the iframe
-      setTimeout(() => {
-        observer.disconnect();
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      }, 3000);
-    };
-
-    document.body.appendChild(iframe);
-  }
-
-  async extractSlugFromDOM(iframeContent) {
-    const problemNameSelector = iframeContent.querySelector(
-      `a[href='${this.problemUrl}']`
-    );
-
-    if (problemNameSelector) {
-      const problemText = problemNameSelector.textContent;
-
-      // Use the URL-based problem name directly instead of formatting the title
-      const url = window.location.href;
-      if (url.includes("leetcode.com/problems/")) {
-        this.slug = url
-          .replace("https://leetcode.com/problems/", "")
-          .split("/")[0];
-      }
-
-      // Extract problem ID from the title (e.g., "1. Two Sum" -> id = "1")
-      const idMatch = problemText.match(/^(\d+)\./);
-      if (idMatch) {
-        this.id = idMatch[1];
-      }
-    }
-  }
-
-  async extractDifficultyFromDOM(iframeDocument) {
-    const easy = iframeDocument.querySelector("div.text-difficulty-easy");
-    const medium = iframeDocument.querySelector("div.text-difficulty-medium");
-    const hard = iframeDocument.querySelector("div.text-difficulty-hard");
-
-    if (easy) {
-      this.difficulty = "easy";
-    } else if (medium) {
-      this.difficulty = "medium";
-    } else if (hard) {
-      this.difficulty = "hard";
-    } else {
-      this.difficulty = "";
-    }
-  }
 
 
 }
