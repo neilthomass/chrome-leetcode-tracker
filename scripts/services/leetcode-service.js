@@ -8,6 +8,7 @@ export default class LeetCodeService {
    */
   constructor() {
     this.cachedProblems = null;
+    this.cachedApiData = null;
   }
 
   /**
@@ -79,11 +80,57 @@ export default class LeetCodeService {
         );
       }
 
+      // Cache both the full API response and the problems array
+      this.cachedApiData = data;
       this.cachedProblems = data.stat_status_pairs;
 
       return this.cachedProblems.filter((problem) => problem.status === "ac");
     } catch (error) {
       throw error;
+    }
+  }
+
+  /**
+   * Get difficulty statistics directly from LeetCode API response.
+   * Returns the actual solved counts by difficulty from user's profile.
+   *
+   * @returns {Promise<Object>} Object with easy, medium, hard counts
+   */
+  async getDifficultyStats() {
+    try {
+      // If we don't have cached data, fetch it first
+      if (!this.cachedApiData) {
+        const response = await fetch("https://leetcode.com/api/problems/all/", {
+          method: "GET",
+          credentials: "include", // Include cookies for authentication
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        this.cachedApiData = await response.json();
+
+        // Verify user authentication
+        if (!this.cachedApiData.user_name || this.cachedApiData.user_name.trim() === "") {
+          throw new Error("You have not logged in to LeetCode. Please log in for syncing problems.");
+        }
+      }
+
+      return {
+        easy: this.cachedApiData.ac_easy || 0,
+        medium: this.cachedApiData.ac_medium || 0,
+        hard: this.cachedApiData.ac_hard || 0,
+        total: this.cachedApiData.num_solved || 0
+      };
+    } catch (error) {
+      // Return zeros if there's an error
+      return {
+        easy: 0,
+        medium: 0,
+        hard: 0,
+        total: 0
+      };
     }
   }
 

@@ -185,12 +185,15 @@ class GitHubService {
    * Fetch all LeetCode problems from the connected GitHub repository.
    * Searches through language folders to identify valid problem files.
    *
+   * NOTE: This method is used by sync functionality to check existing files,
+   * NOT for statistics calculation (stats come from LeetCode API directly).
+   *
    * Algorithm:
    * 1. Build GitHub API URL for repository contents
    * 2. Fetch repository folder list via GitHub API
    * 3. For each language folder, fetch the files inside
    * 4. Filter files matching new LeetCode naming pattern (e.g., "0001 two-sum.py")
-   * 5. Extract problem IDs and return structured problem data for statistics calculation
+   * 5. Extract problem IDs and return structured problem data for sync comparison
    *
    * @returns {Promise<Array<Object>>} Array of problem objects with IDs
    */
@@ -309,11 +312,14 @@ class LeetCodeTrackerController {
   initializeMessageListeners() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const handlers = {
-        updateDifficultyStats: () => {
-          const success = this.stateManager.incrementCounter(
-            request.difficulty
-          );
-          sendResponse({ success });
+        updateDifficultyStats: async () => {
+          // Refresh stats from LeetCode when a new problem is solved
+          try {
+            await this.initCounter();
+            sendResponse({ success: true });
+          } catch (error) {
+            sendResponse({ success: false, error: error.message });
+          }
         },
         getDataConfig: () => {
           sendResponse(ENV);
@@ -416,17 +422,15 @@ class LeetCodeTrackerController {
   }
 
   /**
-   * Initialize or recalculate problem counters by fetching current repository state.
-   * Combines GitHub repository data with LeetCode difficulty information.
+   * Initialize and get difficulty counters for the authenticated user.
+   * Fetches statistics directly from LeetCode API instead of calculating from GitHub.
    *
    * Algorithm:
-   * 1. Validate user authentication and repository configuration
+   * 1. Validate user authentication
    * 2. Reset state manager to loading state
-   * 3. Fetch problem list from GitHub repository in parallel with LeetCode difficulty data
-   * 4. Create difficulty mapping from LeetCode API data
-   * 5. Map repository problems to their difficulty levels
-   * 6. Update state manager with calculated statistics
-   * 7. Handle errors gracefully and ensure UI remains responsive
+   * 3. Fetch difficulty stats directly from LeetCode API (ac_easy, ac_medium, ac_hard)
+   * 4. Update state manager with the actual LeetCode statistics
+   * 5. Handle errors gracefully and ensure UI remains responsive
    *
    * This method is called:
    * - On extension startup if user is fully configured
@@ -460,24 +464,22 @@ class LeetCodeTrackerController {
 
       this.stateManager.reset();
 
-      // Fetch data in parallel for better performance
-      const [problems, allQuestions] = await Promise.all([
-        this.getAllLeetCodeProblems(),
-        this.leetCodeService.fetchAllQuestionsDifficulty(),
-      ]);
+      // Get difficulty stats directly from LeetCode API
+      const stats = await this.leetCodeService.getDifficultyStats();
 
-      // Create efficient lookup map for difficulty information
-      const difficultyMap = new Map(
-        allQuestions.map((q) => [q.questionId, q.difficulty])
-      );
+      // Update state manager with actual LeetCode stats
+      this.stateManager.state.counter = {
+        easy: stats.easy,
+        medium: stats.medium,
+        hard: stats.hard,
+        total: stats.total
+      };
+      this.stateManager.state.loading = false;
+      this.stateManager.state.isCountingComplete = true;
+      this.stateManager.broadcastState();
 
-      // Map problems to their difficulties
-      const difficulties = problems.map((problem) =>
-        difficultyMap.get(problem.questionId)
-      );
-
-      this.stateManager.updateStats(difficulties);
     } catch (error) {
+      console.error('Error fetching LeetCode stats:', error);
       // Ensure UI shows completed state even on error
       this.stateManager.state.loading = false;
       this.stateManager.state.isCountingComplete = true;
