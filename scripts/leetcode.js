@@ -113,28 +113,42 @@
             timestamp: new Date().toISOString()
           });
 
-          let isCommentEnabled = false;
+          // Comments are always disabled
+          const userComment = "";
+
+          // Extract language and code with error handling
           try {
-            if (typeof chrome !== "undefined" && chrome.storage?.local) {
-              const result = await chrome.storage.local.get(
-                "leetcode_tracker_comment_submission"
-              );
-              isCommentEnabled =
-                !!result?.leetcode_tracker_comment_submission;
-            }
-          } catch (_) {
-            // Fallback: leave isCommentEnabled false if storage not accessible
+            this.problem.extractLanguageFromDOM();
+            console.log('✅ LeetCode Tracker: Language extracted:', this.problem.language);
+          } catch (error) {
+            console.log('❌ LeetCode Tracker: Failed to extract language:', error);
           }
 
-          const userComment = isCommentEnabled ? await this.showCommentPopup() : "";
-          this.problem.extractLanguageFromDOM();
-          this.problem.extractCodeFromDOM();
+          try {
+            this.problem.extractCodeFromDOM();
+            console.log('✅ LeetCode Tracker: Code extracted:', this.problem.code ? `${this.problem.code.length} characters` : 'No code');
+          } catch (error) {
+            console.log('❌ LeetCode Tracker: Failed to extract code:', error);
+          }
 
           // Extract submission stats using the direct API approach
-          await this.problem.extractSubmissionStatsFromURL();
+          try {
+            await this.problem.extractSubmissionStatsFromURL();
+            console.log('✅ LeetCode Tracker: Submission stats extracted');
+          } catch (error) {
+            console.log('❌ LeetCode Tracker: Failed to extract submission stats:', error);
+          }
 
           try {
             await this.githubService.submitToGitHub(this.problem, userComment);
+            console.log('🚀 LeetCode Tracker: Successfully pushed to GitHub!', {
+              problemSlug: this.problem.slug,
+              problemId: this.problem.id,
+              language: this.problem.language?.langName,
+              runtime: this.problem.runtime,
+              memory: this.problem.memory,
+              timestamp: new Date().toISOString()
+            });
             this.showToast(
               `Problem ${this.problem.slug || ""} synced successfully`,
               "success"
@@ -460,26 +474,41 @@
       try {
         this.problem.loadProblemFromDOM();
 
-        let isCommentEnabled = false;
+        // Comments are always disabled
+        const userComment = "";
+
+        // Extract language and code with error handling
         try {
-          if (typeof chrome !== "undefined" && chrome.storage?.local) {
-            const result = await chrome.storage.local.get(
-              "leetcode_tracker_comment_submission"
-            );
-            isCommentEnabled = !!result?.leetcode_tracker_comment_submission;
-          }
-        } catch (_) {
-          // Fallback: leave isCommentEnabled false if storage not accessible
+          this.problem.extractLanguageFromDOM();
+          console.log('✅ LeetCode Tracker: Language extracted:', this.problem.language);
+        } catch (error) {
+          console.log('❌ LeetCode Tracker: Failed to extract language:', error);
         }
 
-        const userComment = isCommentEnabled ? await this.showCommentPopup() : "";
-        this.problem.extractLanguageFromDOM();
-        this.problem.extractCodeFromDOM();
+        try {
+          this.problem.extractCodeFromDOM();
+          console.log('✅ LeetCode Tracker: Code extracted:', this.problem.code ? `${this.problem.code.length} characters` : 'No code');
+        } catch (error) {
+          console.log('❌ LeetCode Tracker: Failed to extract code:', error);
+        }
 
         // Extract submission stats using the direct API approach
-        await this.problem.extractSubmissionStatsFromURL();
+        try {
+          await this.problem.extractSubmissionStatsFromURL();
+          console.log('✅ LeetCode Tracker: Submission stats extracted');
+        } catch (error) {
+          console.log('❌ LeetCode Tracker: Failed to extract submission stats:', error);
+        }
 
         await this.githubService.submitToGitHub(this.problem, userComment);
+        console.log('🚀 LeetCode Tracker: Successfully pushed to GitHub (manual)!', {
+          problemSlug: this.problem.slug,
+          problemId: this.problem.id,
+          language: this.problem.language?.langName,
+          runtime: this.problem.runtime,
+          memory: this.problem.memory,
+          timestamp: new Date().toISOString()
+        });
         this.showToast(
           `Problem ${this.problem.slug || ""} pushed successfully`,
           "success"

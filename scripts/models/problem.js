@@ -75,20 +75,127 @@ export default class Problem {
   }
 
   extractLanguageFromDOM() {
-    const language =
-      JSON.parse(window.localStorage.getItem("global_lang")) ||
-      document.querySelector("#headlessui-popover-button-\\:r1s\\: button")
-        ?.textContent;
+    try {
+      let language = null;
 
-    this.language = LanguageUtils.getLanguageInfo(language);
+      // Try multiple methods to extract language
+
+      // Method 1: Local storage
+      try {
+        const storedLang = window.localStorage.getItem("global_lang");
+        if (storedLang) {
+          language = JSON.parse(storedLang);
+          console.log('🔍 LeetCode Tracker: Found language in localStorage:', language);
+        }
+      } catch (e) {
+        console.log('Could not parse language from localStorage:', e);
+      }
+
+      // Method 2: UI button selector (fallback)
+      if (!language) {
+        const buttonSelectors = [
+          "#headlessui-popover-button-\\:r1s\\: button",
+          '[data-cy="lang-select-button"]',
+          '.lang-select button',
+          'button[class*="lang"]',
+          'button[class*="language"]'
+        ];
+
+        for (const selector of buttonSelectors) {
+          try {
+            const element = document.querySelector(selector);
+            if (element && element.textContent) {
+              language = element.textContent.trim();
+              console.log(`🔍 LeetCode Tracker: Found language from selector ${selector}:`, language);
+              break;
+            }
+          } catch (e) {
+            console.log(`Error with selector ${selector}:`, e);
+          }
+        }
+      }
+
+      // Method 3: Extract from code element classes
+      if (!language) {
+        const codeElements = document.querySelectorAll('code[class*="language-"]');
+        if (codeElements.length > 0) {
+          const className = codeElements[0].className;
+          const langMatch = className.match(/language-(\w+)/);
+          if (langMatch) {
+            language = langMatch[1];
+            console.log('🔍 LeetCode Tracker: Found language from code element class:', language);
+          }
+        }
+      }
+
+      // Convert language string to language info
+      if (language) {
+        this.language = LanguageUtils.getLanguageInfo(language);
+        if (this.language) {
+          console.log('✅ LeetCode Tracker: Successfully mapped language:', this.language);
+        } else {
+          console.log('❌ LeetCode Tracker: Could not map language:', language);
+          // Set a default fallback
+          this.language = { langName: 'unknown', extension: '.txt' };
+        }
+      } else {
+        console.log('❌ LeetCode Tracker: No language found, using default');
+        this.language = { langName: 'unknown', extension: '.txt' };
+      }
+    } catch (error) {
+      console.log('❌ LeetCode Tracker: Error extracting language from DOM:', error);
+      this.language = { langName: 'unknown', extension: '.txt' };
+    }
   }
 
   extractCodeFromDOM() {
-    const codeElements = document.querySelectorAll(
-      `code.language-${this.language.langName}`
-    );
+    try {
+      let codeElements = null;
 
-    this.code = codeElements[codeElements.length - 1].textContent;
+      // Try to use language-specific selector if language is available
+      if (this.language && this.language.langName) {
+        codeElements = document.querySelectorAll(
+          `code.language-${this.language.langName}`
+        );
+        console.log(`🔍 LeetCode Tracker: Found ${codeElements.length} code elements for language: ${this.language.langName}`);
+      }
+
+      // Fallback: if no language-specific elements found, try common code selectors
+      if (!codeElements || codeElements.length === 0) {
+        console.log('🔍 LeetCode Tracker: No language-specific code found, trying fallback selectors');
+
+        // Try common code element selectors
+        const fallbackSelectors = [
+          'code[class*="language-"]',  // Any language class
+          'pre code',                  // Code inside pre tags
+          '.CodeMirror-code .CodeMirror-line', // CodeMirror editor
+          '[data-track-load="editor_content"] code', // LeetCode editor content
+          '.monaco-editor .view-line',  // Monaco editor
+          'textarea[data-cy="code-editor"]' // Direct textarea fallback
+        ];
+
+        for (const selector of fallbackSelectors) {
+          codeElements = document.querySelectorAll(selector);
+          if (codeElements.length > 0) {
+            console.log(`🔍 LeetCode Tracker: Found ${codeElements.length} code elements with selector: ${selector}`);
+            break;
+          }
+        }
+      }
+
+      // Extract code from the last (most recent) element
+      if (codeElements && codeElements.length > 0) {
+        const lastElement = codeElements[codeElements.length - 1];
+        this.code = lastElement.textContent || lastElement.value || '';
+        console.log(`✅ LeetCode Tracker: Extracted code (${this.code.length} characters)`);
+      } else {
+        console.log('❌ LeetCode Tracker: No code elements found with any selector');
+        this.code = '';
+      }
+    } catch (error) {
+      console.log('❌ LeetCode Tracker: Error extracting code from DOM:', error);
+      this.code = '';
+    }
   }
 
   /**
@@ -106,10 +213,11 @@ export default class Problem {
 
       console.log('🔍 LeetCode Tracker: Found submission ID:', submissionId);
 
-      // Wait 1 second to ensure submission is processed
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait 2 seconds to ensure submission is processed
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const submissionData = await this.fetchSubmissionData(submissionId);
+      // Poll for submission data until it's ready
+      const submissionData = await this.pollForSubmissionData(submissionId);
       if (submissionData) {
         this.extractSubmissionStatsFromAPI(submissionData);
       } else {
@@ -130,6 +238,58 @@ export default class Problem {
     const url = window.location.href;
     const match = url.match(/\/submissions\/(\d+)\//);
     return match ? match[1] : null;
+  }
+
+  /**
+   * Poll for submission data until it's ready (not PENDING).
+   * @param {string} submissionId - The submission ID
+   * @returns {Promise<Object|null>} Complete submission data or null if failed
+   */
+  async pollForSubmissionData(submissionId) {
+    const maxAttempts = 10; // Maximum polling attempts
+    const pollInterval = 1000; // 1 second between polls
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`🔄 LeetCode Tracker: Polling attempt ${attempt}/${maxAttempts}`);
+
+      const data = await this.fetchSubmissionData(submissionId);
+
+      if (!data) {
+        console.log('❌ LeetCode Tracker: No data received, stopping polling');
+        return null;
+      }
+
+      if (data.state === 'PENDING') {
+        console.log(`⏳ LeetCode Tracker: Submission still pending, waiting ${pollInterval}ms...`);
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          continue;
+        } else {
+          console.log('⏰ LeetCode Tracker: Max polling attempts reached, submission still pending');
+          return null;
+        }
+      }
+
+      // Check if we have complete submission data
+      if (data.status_msg === "Accepted" && data.finished) {
+        console.log('✅ LeetCode Tracker: Submission completed successfully!');
+        return data;
+      }
+
+      // Handle other states (Runtime Error, Wrong Answer, etc.)
+      if (data.finished) {
+        console.log(`🔴 LeetCode Tracker: Submission finished with status: ${data.status_msg}`);
+        return data; // Return even if not accepted, might have some stats
+      }
+
+      console.log(`🔄 LeetCode Tracker: Submission state: ${data.state}, waiting...`);
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+
+    console.log('⏰ LeetCode Tracker: Polling timeout, returning null');
+    return null;
   }
 
   /**

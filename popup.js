@@ -17,12 +17,6 @@ const DOM = {
   logoutButton: document.getElementById("logout-button"),
   changeAccountButton: document.getElementById("change-account-button"),
   checkboxCodeSubmitSetting: document.getElementById("submit-code-checkbox"),
-  checkboxSyncMultipleSubmissions: document.getElementById(
-    "multiple-submission-checkbox"
-  ),
-  checkboxCommentSubmission: document.getElementById(
-    "comment-submission-checkbox"
-  ),
   syncButton: document.getElementById("sync-button"),
   manualPushButton: document.getElementById("manual-push-button"),
   syncStatus: document.getElementById("sync-status"),
@@ -63,21 +57,7 @@ class PopupManager {
       DOM.checkboxCodeSubmitSetting.checked = codeSubmit;
     });
 
-    chrome.storage.local.get(
-      "leetcode_tracker_sync_multiple_submission",
-      (result) => {
-        const isSync = result.leetcode_tracker_sync_multiple_submission;
-        DOM.checkboxSyncMultipleSubmissions.checked = isSync;
-      }
-    );
 
-    chrome.storage.local.get(
-      "leetcode_tracker_comment_submission",
-      (result) => {
-        const isCommentEnabled = result.leetcode_tracker_comment_submission;
-        DOM.checkboxCommentSubmission.checked = isCommentEnabled;
-      }
-    );
   }
 
   /**
@@ -117,78 +97,12 @@ class PopupManager {
         leetcode_tracker_code_submit: !codeSubmit,
       });
 
-      // Disable dependent settings when code submit is disabled
-      if (!codeSubmit) {
-        chrome.storage.local.set({
-          leetcode_tracker_sync_multiple_submission: false,
-          leetcode_tracker_comment_submission: false,
-        });
-      }
 
       this.initializeSetting();
     });
   }
 
-  /**
-   * Toggle multiple submission synchronization with dependency management.
-   * Handles complex interdependencies between settings to prevent invalid states.
-   *
-   * Settings Dependencies:
-   * - When enabling: Disables code submit to prevent conflicts
-   * - When disabling: Disables comment submission (requires multiple submissions)
-   */
-  toggleSyncMultipleSubmissionSetting() {
-    chrome.storage.local.get(
-      "leetcode_tracker_sync_multiple_submission",
-      (result) => {
-        const isSync = result.leetcode_tracker_sync_multiple_submission;
-        chrome.storage.local.set({
-          leetcode_tracker_sync_multiple_submission: !isSync,
-        });
 
-        if (!isSync) {
-          // Enabling multiple submissions - disable conflicting settings
-          chrome.storage.local.set({
-            leetcode_tracker_code_submit: false,
-          });
-        } else {
-          // Disabling multiple submissions - disable dependent settings
-          chrome.storage.local.set({
-            leetcode_tracker_comment_submission: false,
-          });
-        }
-
-        this.initializeSetting();
-      }
-    );
-  }
-
-  /**
-   * Toggle comment submission setting with prerequisite validation.
-   * Comments require multiple submission mode, so enabling comments
-   * automatically configures the required dependencies.
-   */
-  toggleCommentSubmissionSetting() {
-    chrome.storage.local.get(
-      "leetcode_tracker_comment_submission",
-      (result) => {
-        const isCommentEnabled = result.leetcode_tracker_comment_submission;
-        chrome.storage.local.set({
-          leetcode_tracker_comment_submission: !isCommentEnabled,
-        });
-
-        if (!isCommentEnabled) {
-          // Enabling comments requires multiple submissions
-          chrome.storage.local.set({
-            leetcode_tracker_code_submit: false,
-            leetcode_tracker_sync_multiple_submission: true,
-          });
-        }
-
-        this.initializeSetting();
-      }
-    );
-  }
 
   /**
    * Set up all event listeners for the popup interface.
@@ -207,14 +121,6 @@ class PopupManager {
     DOM.checkboxCodeSubmitSetting.addEventListener(
       "click",
       this.toggleCodeSubmitSetting.bind(this)
-    );
-    DOM.checkboxSyncMultipleSubmissions.addEventListener(
-      "click",
-      this.toggleSyncMultipleSubmissionSetting.bind(this)
-    );
-    DOM.checkboxCommentSubmission.addEventListener(
-      "click",
-      this.toggleCommentSubmissionSetting.bind(this)
     );
     DOM.syncButton.addEventListener("click", this.startManualSync.bind(this));
     DOM.manualPushButton.addEventListener("click", this.handleManualPush.bind(this));
@@ -314,8 +220,8 @@ class PopupManager {
             DOM.syncStatus.textContent = `Last sync: Failed - ${lastMessage}`;
           }
         } else if (!lastStatus) {
-          DOM.syncStatus.textContent = "No synchronization performed yet";
-          DOM.syncStatus.className = "text-muted";
+          DOM.syncStatus.textContent = "";
+          DOM.syncStatus.className = "";
         }
       }
 
@@ -423,14 +329,24 @@ class PopupManager {
         "leetcode_tracker_repo",
         "leetcode_tracker_username",
       ]);
-    if (leetcode_tracker_repo) {
-      DOM.repositoryName.textContent = leetcode_tracker_repo;
-    }
+
     if (leetcode_tracker_username) {
       DOM.githubUsername.textContent = leetcode_tracker_username;
     }
-    if (leetcode_tracker_username && leetcode_tracker_repo) {
-      DOM.repositoryLink.href = `https://github.com/${leetcode_tracker_username}/${leetcode_tracker_repo}`;
+
+    if (leetcode_tracker_repo) {
+      // Check if repo is stored as "username/repo" format
+      const parsedRepo = this.parseRepositoryString(leetcode_tracker_repo);
+
+      if (parsedRepo) {
+        // New format: username/repo
+        DOM.repositoryName.textContent = `/${leetcode_tracker_repo}`;
+        DOM.repositoryLink.href = `https://github.com/${leetcode_tracker_repo}`;
+      } else if (leetcode_tracker_username) {
+        // Legacy format: just repo name (fallback for existing users)
+        DOM.repositoryName.textContent = `/${leetcode_tracker_username}/${leetcode_tracker_repo}`;
+        DOM.repositoryLink.href = `https://github.com/${leetcode_tracker_username}/${leetcode_tracker_repo}`;
+      }
     }
   }
 
@@ -535,15 +451,80 @@ class PopupManager {
   }
 
   /**
+   * Parse a repository string (username/repo) to extract components.
+   * @param {string} repoString - Repository string in format "username/repo"
+   * @returns {Object} Object with username and repositoryName, or null if invalid
+   */
+  parseRepositoryString(repoString) {
+    if (!repoString || !repoString.includes('/')) {
+      return null;
+    }
+
+    const [username, repositoryName] = repoString.split('/');
+    return {
+      username: username.trim(),
+      repositoryName: repositoryName.trim()
+    };
+  }
+
+  /**
+   * Parse GitHub repository URL to extract username and repository name.
+   * @param {string} input - GitHub URL or repository name
+   * @returns {Object} Object with username and repositoryName, or null if invalid
+   */
+  parseGitHubRepository(input) {
+    if (!input || !input.trim()) {
+      return null;
+    }
+
+    const trimmedInput = input.trim();
+
+    // Check if it's a GitHub URL
+    const githubUrlPattern = /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/?$/;
+    const match = trimmedInput.match(githubUrlPattern);
+
+    if (match) {
+      return {
+        username: match[1],
+        repositoryName: match[2]
+      };
+    }
+
+    // Check if it's a slug format like "username/repo"
+    const slugPattern = /^([^\/]+)\/([^\/]+)$/;
+    const slugMatch = trimmedInput.match(slugPattern);
+
+    if (slugMatch) {
+      return {
+        username: slugMatch[1],
+        repositoryName: slugMatch[2]
+      };
+    }
+
+    // Fallback: assume it's just a repository name for the current user
+    return {
+      username: null, // Will use current user's username
+      repositoryName: trimmedInput
+    };
+  }
+
+  /**
    * Handle repository setup and validation process.
    * Validates user input and attempts to link the specified repository.
    */
   async handleHookRepo() {
-    const repositoryName = DOM.repoName.value;
+    const repositoryInput = DOM.repoName.value;
     DOM.repoNameError.textContent = "";
 
-    if (!repositoryName) {
-      DOM.repoNameError.textContent = "Please enter a repository name";
+    if (!repositoryInput) {
+      DOM.repoNameError.textContent = "Please enter a repository URL or name";
+      return;
+    }
+
+    const parsedRepo = this.parseGitHubRepository(repositoryInput);
+
+    if (!parsedRepo) {
+      DOM.repoNameError.textContent = "Please enter a valid GitHub repository URL or name";
       return;
     }
 
@@ -554,7 +535,11 @@ class PopupManager {
       ]);
 
       if (result) {
-        await this.linkRepo(result, repositoryName);
+        // Use parsed username or fall back to current user's username
+        const targetUsername = parsedRepo.username || result.leetcode_tracker_username;
+        const repositoryName = parsedRepo.repositoryName;
+
+        await this.linkRepo(result, repositoryName, targetUsername);
       }
     } catch (error) {
       DOM.repoNameError.textContent =
@@ -576,8 +561,9 @@ class PopupManager {
    *
    * @param {Object} githubAuthData - Authentication data with token and username
    * @param {string} repositoryName - Name of repository to link
+   * @param {string} targetUsername - Username of the repository owner (may differ from authenticated user)
    */
-  async linkRepo(githubAuthData, repositoryName) {
+  async linkRepo(githubAuthData, repositoryName, targetUsername) {
     const { leetcode_tracker_token, leetcode_tracker_username } =
       githubAuthData;
     const dataConfig = await new Promise((resolve, reject) => {
@@ -592,7 +578,7 @@ class PopupManager {
 
     try {
       const response = await fetch(
-        `${dataConfig.REPOSITORY_URL}${leetcode_tracker_username}/${repositoryName}`,
+        `${dataConfig.REPOSITORY_URL}${targetUsername}/${repositoryName}`,
         {
           method: "GET",
           headers: {
@@ -614,7 +600,7 @@ class PopupManager {
 
       await chrome.storage.local.set({
         leetcode_tracker_mode: "commit",
-        leetcode_tracker_repo: repositoryName,
+        leetcode_tracker_repo: `${targetUsername}/${repositoryName}`,
       });
 
       DOM.hookRepo.style.display = "none";
@@ -633,11 +619,73 @@ class PopupManager {
       await chrome.storage.local.remove([
         "leetcode_tracker_mode",
         "leetcode_tracker_repo",
+        "leetcode_tracker_repo_username",
       ]);
       DOM.authenticated.style.display = "none";
       DOM.hookRepo.style.display = "block";
     } catch (error) {
       // Handle unlink errors gracefully
+    }
+  }
+
+  /**
+   * Send message to content script with fallback injection if script not loaded.
+   * @param {number} tabId - The tab ID to send message to
+   * @param {Object} message - The message to send
+   * @param {Function} callback - Callback to execute after successful message
+   */
+  async sendMessageWithFallback(tabId, message, callback) {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          const errorMessage = chrome.runtime.lastError.message || '';
+
+          if (errorMessage.includes('Could not establish connection') ||
+              errorMessage.includes('Receiving end does not exist')) {
+            console.log('🔄 LeetCode Tracker: Content script not found, injecting...');
+            this.injectContentScript(tabId, message, callback);
+          } else {
+            console.error('Manual push failed:', chrome.runtime.lastError.message || chrome.runtime.lastError);
+          }
+        } else {
+          console.log('✅ LeetCode Tracker: Message sent successfully');
+          callback();
+        }
+      });
+    } catch (error) {
+      console.error('Error sending message:', error);
+      this.injectContentScript(tabId, message, callback);
+    }
+  }
+
+  /**
+   * Inject content script and retry sending message.
+   * @param {number} tabId - The tab ID to inject script into
+   * @param {Object} message - The message to send after injection
+   * @param {Function} callback - Callback to execute after successful message
+   */
+  async injectContentScript(tabId, message, callback) {
+    try {
+      console.log('🔧 LeetCode Tracker: Injecting content script...');
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['scripts/loader.js']
+      });
+
+      // Wait a moment for script to initialize
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tabId, message, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Manual push failed after injection:', chrome.runtime.lastError.message || chrome.runtime.lastError);
+          } else {
+            console.log('✅ LeetCode Tracker: Message sent successfully after injection');
+            callback();
+          }
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to inject content script:', error);
     }
   }
 
@@ -658,24 +706,19 @@ class PopupManager {
         throw new Error('Please navigate to a LeetCode problem page first');
       }
 
-      // Send message to content script to handle manual push
-      chrome.tabs.sendMessage(tab.id, { type: "manualPush" }, (response) => {
+      // Try to send message to content script, with fallback injection
+      this.sendMessageWithFallback(tab.id, { type: "manualPush" }, () => {
         setTimeout(() => {
           DOM.manualPushButton.disabled = false;
           DOM.manualPushButton.innerHTML =
             '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5"/><path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0z"/></svg><span style="margin-left: 5px">Push</span>';
         }, 2000);
-
-        if (chrome.runtime.lastError) {
-          // Handle messaging errors gracefully
-          console.error('Manual push failed:', chrome.runtime.lastError.message);
-        }
       });
     } catch (error) {
       DOM.manualPushButton.disabled = false;
       DOM.manualPushButton.innerHTML =
         '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5"/><path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0z"/></svg><span style="margin-left: 5px">Push</span>';
-      console.error('Manual push error:', error.message);
+      console.error('Manual push error:', error.message || error);
     }
   }
 }

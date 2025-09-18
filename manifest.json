@@ -16,7 +16,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["unlimitedStorage", "storage", "activeTab"],
+  "permissions": ["unlimitedStorage", "storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://leetcode.com/*",
     "https://api.github.com/*"

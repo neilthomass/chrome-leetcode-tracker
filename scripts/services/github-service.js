@@ -32,13 +32,11 @@ export default class GithubService {
         "leetcode_tracker_repo",
         "leetcode_tracker_username",
         "leetcode_tracker_token",
+        "leetcode_tracker_repo_username",
       ]);
       this.dataConfig = await this.configurationService.getDataConfig();
-      const result = await chrome.storage.local.get(
-        "leetcode_tracker_sync_multiple_submission"
-      );
-      this.syncMultipleSubmissionsSettingEnabled =
-        result.leetcode_tracker_sync_multiple_submission || false;
+      // Multiple submissions is always disabled
+      this.syncMultipleSubmissionsSettingEnabled = false;
     } catch (error) {
       throw error;
     }
@@ -595,20 +593,16 @@ export default class GithubService {
       throw new Error("No problem set for URL building");
     }
 
-    const dateTime =
-      this.syncMultipleSubmissionsSettingEnabled && !isSyncing
-        ? `_${this.getLocalTimeString()}`
-        : "";
-
+    // Multiple submissions is always disabled, so no date/time suffix or version path
     const fileName =
       file ||
-      `${this.problem.slug}${dateTime}${this.problem.language.extension}`;
-    const versionPath =
-      this.syncMultipleSubmissionsSettingEnabled && !isSyncing
-        ? `/version/${this.problem.language.langName}`
-        : "";
+      `${this.problem.slug}${this.problem.language.extension}`;
+    const versionPath = "";
 
-    return `${this.dataConfig.REPOSITORY_URL}${this.userConfig.leetcode_tracker_username}/${this.userConfig.leetcode_tracker_repo}/contents/${this.problem.slug}${versionPath}/${fileName}`;
+    // Use repo username if available, otherwise fall back to authenticated user's username
+    const repoUsername = this.userConfig.leetcode_tracker_repo_username || this.userConfig.leetcode_tracker_username;
+
+    return `${this.dataConfig.REPOSITORY_URL}${repoUsername}/${this.userConfig.leetcode_tracker_repo}/contents/${this.problem.slug}${versionPath}/${fileName}`;
   }
 
   /**

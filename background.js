@@ -144,8 +144,13 @@ class GitHubService {
     const result = await chrome.storage.local.get([
       "leetcode_tracker_username",
       "leetcode_tracker_repo",
+      "leetcode_tracker_repo_username",
     ]);
-    return `${this.env.REPOSITORY_URL}${result.leetcode_tracker_username}/${result.leetcode_tracker_repo}/contents/`;
+
+    // Use repo username if available, otherwise fall back to authenticated user's username
+    const repoUsername = result.leetcode_tracker_repo_username || result.leetcode_tracker_username;
+
+    return `${this.env.REPOSITORY_URL}${repoUsername}/${result.leetcode_tracker_repo}/contents/`;
   }
 
   /**
@@ -213,7 +218,7 @@ class LeetCodeTrackerController {
     chrome.storage.local.set({
       leetcode_tracker_last_sync_status: "",
       leetcode_tracker_sync_in_progress: false,
-      leetcode_tracker_last_sync_message: "No synchronization performed yet",
+      leetcode_tracker_last_sync_message: "",
       leetcode_tracker_last_sync_date: null,
     });
 
@@ -426,27 +431,15 @@ chrome.runtime.onInstalled.addListener((details) => {
       }
     });
 
-    chrome.storage.local.get(
-      "leetcode_tracker_sync_multiple_submission",
-      (result) => {
-        if (result.leetcode_tracker_sync_multiple_submission === undefined) {
-          chrome.storage.local.set({
-            leetcode_tracker_sync_multiple_submission: false,
-          });
-        }
-      }
-    );
+    // Always set multiple submissions to false
+    chrome.storage.local.set({
+      leetcode_tracker_sync_multiple_submission: false,
+    });
 
-    chrome.storage.local.get(
-      "leetcode_tracker_comment_submission",
-      (result) => {
-        if (result.leetcode_tracker_comment_submission === undefined) {
-          chrome.storage.local.set({
-            leetcode_tracker_comment_submission: false,
-          });
-        }
-      }
-    );
+    // Always set comment submission to false
+    chrome.storage.local.set({
+      leetcode_tracker_comment_submission: false,
+    });
 
     chrome.storage.local.get("leetcode_tracker_auto_sync", (result) => {
       if (result.leetcode_tracker_auto_sync === undefined) {
