@@ -41,6 +41,14 @@ export default class SyncService {
    * @returns {Promise<Object>} Result object with success status, message, and stats
    */
   async startSync() {
+    // Check if chrome.storage is available
+    if (!chrome?.storage?.local) {
+      return {
+        success: false,
+        message: "Chrome storage API unavailable. Please reload the extension.",
+      };
+    }
+
     const { leetcode_tracker_sync_in_progress } =
       await chrome.storage.local.get("leetcode_tracker_sync_in_progress");
 

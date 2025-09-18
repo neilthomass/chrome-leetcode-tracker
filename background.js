@@ -140,17 +140,45 @@ class GitHubService {
    *
    * @returns {Promise<string>} Complete GitHub API URL for repository contents
    */
+  /**
+   * Parse repository string to extract username and repository name.
+   * @param {string} repoString - Repository string in format "username/repo" or just "repo"
+   * @param {string} fallbackUsername - Username to use if repoString is just repo name
+   * @returns {Object} Object with username and repositoryName
+   */
+  parseRepositoryString(repoString, fallbackUsername) {
+    if (!repoString) {
+      return null;
+    }
+
+    if (repoString.includes('/')) {
+      const [username, repositoryName] = repoString.split('/');
+      return {
+        username: username.trim(),
+        repositoryName: repositoryName.trim()
+      };
+    } else {
+      // Legacy format: just repo name, use fallback username
+      return {
+        username: fallbackUsername,
+        repositoryName: repoString.trim()
+      };
+    }
+  }
+
   async buildBasicGithubUrl() {
     const result = await chrome.storage.local.get([
       "leetcode_tracker_username",
       "leetcode_tracker_repo",
-      "leetcode_tracker_repo_username",
     ]);
 
-    // Use repo username if available, otherwise fall back to authenticated user's username
-    const repoUsername = result.leetcode_tracker_repo_username || result.leetcode_tracker_username;
+    // Parse repository string to get username and repo name
+    const parsedRepo = this.parseRepositoryString(result.leetcode_tracker_repo, result.leetcode_tracker_username);
+    if (!parsedRepo) {
+      throw new Error("Invalid repository configuration");
+    }
 
-    return `${this.env.REPOSITORY_URL}${repoUsername}/${result.leetcode_tracker_repo}/contents/`;
+    return `${this.env.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/`;
   }
 
   /**
@@ -169,16 +197,30 @@ class GitHubService {
   async getAllLeetCodeProblems() {
     try {
       const url = await this.buildBasicGithubUrl();
-      const response = await fetch(url);
-      const data = await response.json();
+      console.log('🔍 LeetCode Tracker: Fetching problems from URL:', url);
 
-      return data
+      const response = await fetch(url);
+      console.log('📊 LeetCode Tracker: GitHub API response status:', response.status);
+
+      if (!response.ok) {
+        console.error('❌ LeetCode Tracker: GitHub API error:', response.status, response.statusText);
+        return [];
+      }
+
+      const data = await response.json();
+      console.log('📁 LeetCode Tracker: Found repository contents:', data.length, 'items');
+
+      const problems = data
         .filter((problem) => /^\d+-[A-Z]/.test(problem.name))
         .map((problem) => ({
           originalName: problem.name,
           questionId: this.convertGithubToLeetCodeSlug(problem.name),
         }));
+
+      console.log('✅ LeetCode Tracker: Filtered problems:', problems.length, 'LeetCode problems found');
+      return problems;
     } catch (error) {
+      console.error('❌ LeetCode Tracker: Error fetching problems:', error);
       return [];
     }
   }
@@ -392,7 +434,7 @@ class LeetCodeTrackerController {
 
       // Fetch data in parallel for better performance
       const [problems, allQuestions] = await Promise.all([
-        this.githubService.getAllLeetCodeProblems(),
+        this.getAllLeetCodeProblems(),
         this.leetCodeService.fetchAllQuestionsDifficulty(),
       ]);
 

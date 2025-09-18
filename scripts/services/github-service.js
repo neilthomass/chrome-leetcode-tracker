@@ -32,7 +32,6 @@ export default class GithubService {
         "leetcode_tracker_repo",
         "leetcode_tracker_username",
         "leetcode_tracker_token",
-        "leetcode_tracker_repo_username",
       ]);
       this.dataConfig = await this.configurationService.getDataConfig();
       // Multiple submissions is always disabled
@@ -155,7 +154,7 @@ export default class GithubService {
     const readmeUrl = this.buildGitHubUrl(isSyncing, "README.md");
 
     const codeBody = {
-      message: `Create ${this.problem.slug}`,
+      message: `Create solution file`,
       content: btoa(this.getFormattedCode()),
     };
 
@@ -187,7 +186,7 @@ export default class GithubService {
           // Create README only if description exists and is meaningful
           if (this.problem.description && this.problem.description.trim().length > 0) {
             const readmeBody = {
-              message: `Add README for ${this.problem.slug}`,
+              message: `Add README file`,
               content: this.utf8ToBase64(this.problem.description),
             };
 
@@ -306,7 +305,6 @@ export default class GithubService {
 
     // Create comprehensive metadata header in exact format requested
     let header = `${commentFormat.start}\n`;
-    header += `${commentFormat.linePrefix}Problem: ${this.problem.slug || 'unknown'}\n`;
     header += `${commentFormat.linePrefix}Last updated: ${currentDate}\n`;
 
     // Add problem URL if available
@@ -599,10 +597,38 @@ export default class GithubService {
       `${this.problem.slug}${this.problem.language.extension}`;
     const versionPath = "";
 
-    // Use repo username if available, otherwise fall back to authenticated user's username
-    const repoUsername = this.userConfig.leetcode_tracker_repo_username || this.userConfig.leetcode_tracker_username;
+    // Parse repository string to get username and repo name
+    const parsedRepo = this.parseRepositoryString(this.userConfig.leetcode_tracker_repo);
+    if (!parsedRepo) {
+      throw new Error("Invalid repository configuration");
+    }
 
-    return `${this.dataConfig.REPOSITORY_URL}${repoUsername}/${this.userConfig.leetcode_tracker_repo}/contents/${this.problem.slug}${versionPath}/${fileName}`;
+    return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${this.problem.slug}${versionPath}/${fileName}`;
+  }
+
+  /**
+   * Parse repository string to extract username and repository name.
+   * @param {string} repoString - Repository string in format "username/repo" or just "repo"
+   * @returns {Object} Object with username and repositoryName
+   */
+  parseRepositoryString(repoString) {
+    if (!repoString) {
+      return null;
+    }
+
+    if (repoString.includes('/')) {
+      const [username, repositoryName] = repoString.split('/');
+      return {
+        username: username.trim(),
+        repositoryName: repositoryName.trim()
+      };
+    } else {
+      // Legacy format: just repo name, use authenticated user's username
+      return {
+        username: this.userConfig.leetcode_tracker_username,
+        repositoryName: repoString.trim()
+      };
+    }
   }
 
   /**

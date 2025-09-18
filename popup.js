@@ -619,7 +619,6 @@ class PopupManager {
       await chrome.storage.local.remove([
         "leetcode_tracker_mode",
         "leetcode_tracker_repo",
-        "leetcode_tracker_repo_username",
       ]);
       DOM.authenticated.style.display = "none";
       DOM.hookRepo.style.display = "block";
