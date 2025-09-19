@@ -60,24 +60,6 @@ class PopupManager {
 
   }
 
-  /**
-   * Toggle the setting for syncing old problems that were solved before extension installation.
-   * Provides backward compatibility for existing LeetCode solutions.
-   */
-  toggleSyncOldProblemsSetting() {
-    chrome.storage.local.get("leetcode_tracker_sync_old_problems", (result) => {
-      const syncOldProblems =
-        result.leetcode_tracker_sync_old_problems !== undefined
-          ? result.leetcode_tracker_sync_old_problems
-          : false;
-
-      chrome.storage.local.set({
-        leetcode_tracker_sync_old_problems: !syncOldProblems,
-      });
-
-      this.initializeSetting();
-    });
-  }
 
   /**
    * Toggle the code submission setting with dependent setting management.

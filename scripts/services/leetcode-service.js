@@ -11,37 +11,6 @@ export default class LeetCodeService {
     this.cachedApiData = null;
   }
 
-  /**
-   * Fetches all questions from LeetCode GraphQL API with their difficulty levels.
-   * Used to get comprehensive problem metadata.
-   *
-   * @returns {Promise<Object[]>} Array of question objects with questionId and difficulty
-   */
-  async fetchAllQuestionsDifficulty() {
-    const graphqlQuery = {
-      query: `
-        query allQuestions {
-          allQuestions {
-            questionId
-            difficulty
-          }
-        }
-      `,
-    };
-
-    try {
-      const response = await fetch("https://leetcode.com/graphql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(graphqlQuery),
-      });
-
-      const data = await response.json();
-      return data.data.allQuestions;
-    } catch (error) {
-      return [];
-    }
-  }
 
   /**
    * Retrieves the list of solved problems for the authenticated user.
