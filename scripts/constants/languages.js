@@ -30,4 +30,6 @@ export const alternativeNames = {
   // Handle various Python naming conventions
   "python 3": "python3",
   "py3": "python3",
+  // Ensure Java is not confused with JavaScript
+  "js": "javascript",
 };

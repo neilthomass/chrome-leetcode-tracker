@@ -99,9 +99,10 @@ export default class Problem {
 
       // Convert language string to language info
       if (language) {
+        console.log('🔍 LeetCode Tracker: Raw language detected:', language);
         this.language = LanguageUtils.getLanguageInfo(language);
         if (this.language) {
-          console.log('✅ LeetCode Tracker: Successfully mapped language:', this.language);
+          console.log('✅ LeetCode Tracker: Successfully mapped language:', language, '→', this.language);
         } else {
           console.log('❌ LeetCode Tracker: Could not map language:', language);
           // Set a default fallback

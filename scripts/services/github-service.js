@@ -608,7 +608,9 @@ export default class GithubService {
     const language = this.problem.language?.langName || "Unknown";
     const difficulty = this.problem.difficulty ? this.problem.difficulty.charAt(0).toUpperCase() + this.problem.difficulty.slice(1) : "";
 
-    let message = `${action} solution: ${paddedId}. ${problemName}`;
+    // Include language in the title line for clarity
+    const languageTitle = language !== "Unknown" ? ` ${language.charAt(0).toUpperCase() + language.slice(1)}` : "";
+    let message = `${action} solution: ${paddedId}. ${problemName}${languageTitle}`;
 
     // Add language and difficulty info
     const details = [];
