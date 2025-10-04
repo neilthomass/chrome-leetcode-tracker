@@ -73,7 +73,7 @@
      * @param {string} oldUrl - Previous URL
      * @param {string} newUrl - New URL
      */
-    handleUrlChange(oldUrl, newUrl) {
+    async handleUrlChange(oldUrl, newUrl) {
       console.log('🔄 LeetCode Tracker: URL changed from', oldUrl, 'to', newUrl);
 
       // Check if we navigated to a submission URL
@@ -94,226 +94,78 @@
         // Mark as processed immediately to prevent duplicates
         this.processedSubmissions.add(submissionId);
 
-        // Wait a bit for DOM to update, then check if it's accepted
-        setTimeout(async () => {
-          const resultElement = document.querySelector(domElements.submissionResult);
-
-          if (resultElement && resultElement.textContent === "Accepted") {
-            if (!this.isProcessingSubmission) {
-              console.log('✅ LeetCode Tracker: URL-detected submission is Accepted, processing...');
-              this.handleSubmission();
-            } else {
-              console.log('⏭️ LeetCode Tracker: Already processing a submission, skipping');
-            }
-          } else {
-            console.log('ℹ️ LeetCode Tracker: Submission detected but not accepted (or result not found yet)');
-            // Remove from processed set if it wasn't accepted so we can retry
-            this.processedSubmissions.delete(submissionId);
-          }
-        }, 1000);
+        // Check if submission is accepted via API
+        if (!this.isProcessingSubmission) {
+          console.log('✅ LeetCode Tracker: Processing submission via URL detection...');
+          this.handleSubmission();
+        } else {
+          console.log('⏭️ LeetCode Tracker: Already processing a submission, skipping');
+        }
       }
     }
 
 
     /**
      * Initialize or reinitialize the tracker for the current problem page.
-     * Loads problem data from DOM and sets up submission monitoring.
-     *
-     * Algorithm:
-     * 1. Extract problem metadata from current page DOM
-     * 2. Wait for submit button to be available and interactive
-     * 3. Attach click handler to monitor submission attempts
+     * Loads problem data from URL.
      */
     async init() {
-      this.problem.loadProblemFromDOM();
-      await DOMUtils.waitForElement(
-        `${domElements.submitButton}:not([data-state="closed"])`
-      );
-      this.setupSubmitButton();
+      this.problem.loadProblemFromURL();
+      console.log('✅ LeetCode Tracker: Initialized for problem:', this.problem.slug);
     }
 
-    /**
-     * Set up event listener on the LeetCode submit button to monitor submissions.
-     * Ensures clean handler attachment by removing any existing listeners first.
-     *
-     * Algorithm:
-     * 1. Remove any previously attached click handlers to prevent duplicates
-     * 2. Create new click handler that clears old results and triggers submission handling
-     * 3. Attach the handler to the submit button element
-     * 4. Track handler attachment state to prevent memory leaks
-     */
-    setupSubmitButton() {
-      let submitButton = document.querySelector(domElements.submitButton);
-
-      // Try alternative selectors if main one fails
-      if (!submitButton && domElements.submitButtonAlternatives) {
-        console.log('⚠️ LeetCode Tracker: Primary submit button selector failed, trying alternatives...');
-        for (const selector of domElements.submitButtonAlternatives) {
-          submitButton = document.querySelector(selector);
-          if (submitButton) {
-            console.log('✅ LeetCode Tracker: Found submit button with alternative selector:', selector);
-            break;
-          }
-        }
-      }
-
-      // Try finding button by text content as last resort
-      if (!submitButton) {
-        console.log('⚠️ LeetCode Tracker: Trying to find submit button by text content...');
-        const buttons = Array.from(document.querySelectorAll('button'));
-        submitButton = buttons.find(btn =>
-          btn.textContent.trim().toLowerCase() === 'submit' ||
-          btn.textContent.trim().toLowerCase().includes('submit')
-        );
-        if (submitButton) {
-          console.log('✅ LeetCode Tracker: Found submit button by text content');
-        }
-      }
-
-      if (!submitButton) {
-        console.log('❌ LeetCode Tracker: Submit button not found with any selector');
-        // Use fallback: watch for submission results directly
-        this.watchForSubmissionResults();
-        return;
-      }
-
-      console.log('✅ LeetCode Tracker: Submit button found, attaching click handler');
-
-      if (this.clickHandlerAttached && this.submitClickHandler) {
-        submitButton.removeEventListener("click", this.submitClickHandler);
-        this.clickHandlerAttached = false;
-      }
-
-      this.submitClickHandler = () => {
-        console.log('🖱️ LeetCode Tracker: Submit button clicked');
-        const existingResult = document.querySelector(
-          domElements.submissionResult
-        );
-        if (existingResult) {
-          existingResult.remove();
-        }
-
-        this.handleSubmission();
-      };
-
-      submitButton.addEventListener("click", this.submitClickHandler);
-      this.clickHandlerAttached = true;
-
-      // Also watch for submission results as a fallback
-      this.watchForSubmissionResults();
-    }
 
     /**
-     * Watch for submission results appearing in the DOM as a fallback mechanism.
-     * This is used when the submit button click handler doesn't work.
-     */
-    watchForSubmissionResults() {
-      if (this.resultObserver) {
-        this.resultObserver.disconnect();
-      }
-
-      console.log('👁️ LeetCode Tracker: Watching for submission results...');
-
-      this.resultObserver = new MutationObserver((mutations) => {
-        const resultElement = document.querySelector(domElements.submissionResult);
-
-        if (resultElement && resultElement.textContent === "Accepted") {
-          // Get submission ID from URL to check if already processed
-          const submissionMatch = window.location.href.match(/\/submissions\/(\d+)/);
-          const submissionId = submissionMatch ? submissionMatch[1] : null;
-
-          // Check if we're already processing to avoid duplicates
-          if (!this.isProcessingSubmission && (!submissionId || !this.processedSubmissions.has(submissionId))) {
-            console.log('🎯 LeetCode Tracker: Detected "Accepted" result via MutationObserver');
-            if (submissionId) {
-              this.processedSubmissions.add(submissionId);
-            }
-            this.handleSubmission();
-          }
-        }
-      });
-
-      this.resultObserver.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        characterDataOldValue: true
-      });
-    }
-
-    /**
-     * Handle the submission process after user clicks submit button.
-     * Waits for submission result and processes accepted solutions.
-     *
-     * Algorithm:
-     * 1. Wait for submission result element to appear in DOM
-     * 2. Check if submission was accepted (status === "Accepted")
-     * 3. Check user settings for comment functionality
-     * 4. Show comment popup if enabled, collect user input
-     * 5. Extract language and code information from current DOM state
-     * 6. Use API data if available, otherwise fall back to DOM extraction
-     * 7. Submit complete solution data to GitHub via GithubService
+     * Handle the submission process using API data only.
+     * Extracts all data from LeetCode API, no DOM parsing.
      */
     async handleSubmission() {
       this.isProcessingSubmission = true;
 
       try {
-        await DOMUtils.waitForElement(domElements.submissionResult);
-        const accepted = document.querySelector(domElements.submissionResult);
-        if (accepted && accepted.textContent === "Accepted") {
-          console.log("🎉 LeetCode Tracker: Problem accepted!", {
+        console.log("🎉 LeetCode Tracker: Processing submission!", {
+          problemSlug: this.problem.slug,
+          timestamp: new Date().toISOString()
+        });
+
+        // Comments are always disabled
+        const userComment = "";
+
+        // Extract submission stats using the API approach
+        try {
+          await this.problem.extractSubmissionStatsFromURL();
+          console.log('✅ LeetCode Tracker: Submission stats extracted from API');
+        } catch (error) {
+          console.log('❌ LeetCode Tracker: Failed to extract submission stats:', error);
+          throw error; // Don't continue if API fails
+        }
+
+        // Verify submission was accepted via API data
+        if (!this.problem.apiData || this.problem.apiData.status_msg !== "Accepted") {
+          console.log('⏭️ LeetCode Tracker: Submission not accepted, skipping');
+          return;
+        }
+
+        try {
+          await this.githubService.submitToGitHub(this.problem, userComment);
+          console.log('🚀 LeetCode Tracker: Successfully pushed to GitHub!', {
             problemSlug: this.problem.slug,
             problemId: this.problem.id,
+            language: this.problem.language?.langName,
+            runtime: this.problem.runtime,
+            memory: this.problem.memory,
             timestamp: new Date().toISOString()
           });
-
-          // Comments are always disabled
-          const userComment = "";
-
-          // Extract language and code with error handling
-          try {
-            this.problem.extractLanguageFromDOM();
-            console.log('✅ LeetCode Tracker: Language extracted:', this.problem.language);
-          } catch (error) {
-            console.log('❌ LeetCode Tracker: Failed to extract language:', error);
-          }
-
-          try {
-            this.problem.extractCodeFromDOM();
-            console.log('✅ LeetCode Tracker: Code extracted:', this.problem.code ? `${this.problem.code.length} characters` : 'No code');
-          } catch (error) {
-            console.log('❌ LeetCode Tracker: Failed to extract code:', error);
-          }
-
-          // Extract submission stats using the direct API approach
-          try {
-            await this.problem.extractSubmissionStatsFromURL();
-            console.log('✅ LeetCode Tracker: Submission stats extracted');
-          } catch (error) {
-            console.log('❌ LeetCode Tracker: Failed to extract submission stats:', error);
-          }
-
-          try {
-            await this.githubService.submitToGitHub(this.problem, userComment);
-            console.log('🚀 LeetCode Tracker: Successfully pushed to GitHub!', {
-              problemSlug: this.problem.slug,
-              problemId: this.problem.id,
-              language: this.problem.language?.langName,
-              runtime: this.problem.runtime,
-              memory: this.problem.memory,
-              timestamp: new Date().toISOString()
-            });
-            this.showToast(
-              `Problem ${this.problem.slug || ""} synced successfully`,
-              "success"
-            );
-          } catch (error) {
-            const message = (error && error.message) ? error.message.split("\n")[0].slice(0, 140) : "Unknown error";
-            this.showToast(
-              `Problem ${this.problem.slug || ""} sync failed: ${message}`,
-              "error"
-            );
-          }
+          this.showToast(
+            `Problem ${this.problem.slug || ""} synced successfully`,
+            "success"
+          );
+        } catch (error) {
+          const message = (error && error.message) ? error.message.split("\n")[0].slice(0, 140) : "Unknown error";
+          this.showToast(
+            `Problem ${this.problem.slug || ""} sync failed: ${message}`,
+            "error"
+          );
         }
       } finally {
         this.isProcessingSubmission = false;
@@ -608,50 +460,28 @@
     }
 
     /**
-     * Handle manual submission by simulating an accepted solution.
-     * Extracts current problem data and code, then pushes to GitHub without waiting for actual submission.
-     *
-     * Algorithm:
-     * 1. Load current problem data from DOM
-     * 2. Extract language and code from current editor state
-     * 3. Check user settings for comment functionality
-     * 4. Show comment popup if enabled, collect user input
-     * 5. Submit solution data to GitHub via GithubService
+     * Handle manual submission using API data.
+     * Extracts data from submission URL if on a submission page.
      */
     async handleManualSubmission() {
       console.log("🔧 LeetCode Tracker: Manual push initiated", {
         problemSlug: this.problem.slug,
-        problemId: this.problem.id,
         timestamp: new Date().toISOString()
       });
 
       try {
-        this.problem.loadProblemFromDOM();
+        this.problem.loadProblemFromURL();
 
         // Comments are always disabled
         const userComment = "";
 
-        // Extract language and code with error handling
-        try {
-          this.problem.extractLanguageFromDOM();
-          console.log('✅ LeetCode Tracker: Language extracted:', this.problem.language);
-        } catch (error) {
-          console.log('❌ LeetCode Tracker: Failed to extract language:', error);
-        }
-
-        try {
-          this.problem.extractCodeFromDOM();
-          console.log('✅ LeetCode Tracker: Code extracted:', this.problem.code ? `${this.problem.code.length} characters` : 'No code');
-        } catch (error) {
-          console.log('❌ LeetCode Tracker: Failed to extract code:', error);
-        }
-
-        // Extract submission stats using the direct API approach
+        // Extract submission stats using the API approach
         try {
           await this.problem.extractSubmissionStatsFromURL();
-          console.log('✅ LeetCode Tracker: Submission stats extracted');
+          console.log('✅ LeetCode Tracker: Submission stats extracted from API');
         } catch (error) {
           console.log('❌ LeetCode Tracker: Failed to extract submission stats:', error);
+          throw new Error('Must be on a submission page to use manual push');
         }
 
         await this.githubService.submitToGitHub(this.problem, userComment);
