@@ -174,9 +174,11 @@ export default class Problem {
    */
   async extractSubmissionStatsFromURL() {
     try {
-      const submissionId = this.getSubmissionIdFromURL();
+      // Wait for URL to change to submission URL (max 10 seconds)
+      const submissionId = await this.waitForSubmissionURL();
+
       if (!submissionId) {
-        console.log('No submission ID found in URL, falling back to DOM extraction');
+        console.log('No submission ID found in URL after waiting, falling back to DOM extraction');
         this.extractSubmissionStatsFromDOM();
         return;
       }
@@ -201,12 +203,39 @@ export default class Problem {
   }
 
   /**
+   * Wait for the URL to change to a submission URL.
+   * Polls the URL every 500ms for up to 10 seconds.
+   * @returns {Promise<string|null>} Submission ID or null if timeout
+   */
+  async waitForSubmissionURL() {
+    const maxAttempts = 20; // 20 attempts * 500ms = 10 seconds
+    const pollInterval = 500;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const submissionId = this.getSubmissionIdFromURL();
+
+      if (submissionId) {
+        console.log(`✅ LeetCode Tracker: Found submission URL on attempt ${attempt}`);
+        return submissionId;
+      }
+
+      if (attempt < maxAttempts) {
+        console.log(`⏳ LeetCode Tracker: Waiting for submission URL... (attempt ${attempt}/${maxAttempts})`);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+
+    console.log('⏰ LeetCode Tracker: Timeout waiting for submission URL');
+    return null;
+  }
+
+  /**
    * Extract submission ID from the current URL.
    * @returns {string|null} Submission ID or null if not found
    */
   getSubmissionIdFromURL() {
     const url = window.location.href;
-    const match = url.match(/\/submissions\/(\d+)\//);
+    const match = url.match(/\/submissions\/(\d+)/);
     return match ? match[1] : null;
   }
 

@@ -1,8 +1,6 @@
   import Problem from "/scripts/models/problem.js";
   import RouteService from "/scripts/services/route-service.js";
-  import DOMUtils from "/scripts/utils/dom-utils.js";
   import GithubService from "/scripts/services/github-service.js";
-  import { domElements } from "/scripts/constants/dom-elements.js";
 
   /**
    * Main controller class for the LeetCode Tracker extension.
@@ -18,6 +16,8 @@
       this.githubService = new GithubService();
       this.route = new RouteService(() => this.init());
       this.setupMessageListener();
+      this.setupUrlChangeDetection();
+      this.processedSubmissions = new Set(); // Track processed submission IDs
       this.init();
     }
 
@@ -33,6 +33,84 @@
             sendResponse({ success: true });
           }
         });
+      }
+    }
+
+    /**
+     * Set up URL change detection to catch submissions via URL changes.
+     * LeetCode redirects to /submissions/[id] after a submission is accepted.
+     * This serves as a robust fallback mechanism.
+     */
+    setupUrlChangeDetection() {
+      this.lastUrl = window.location.href;
+
+      // Use both MutationObserver and setInterval for maximum reliability
+      const urlObserver = new MutationObserver(() => {
+        const currentUrl = window.location.href;
+        if (currentUrl !== this.lastUrl) {
+          this.handleUrlChange(this.lastUrl, currentUrl);
+          this.lastUrl = currentUrl;
+        }
+      });
+
+      urlObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      // Backup polling mechanism in case MutationObserver misses the change
+      setInterval(() => {
+        const currentUrl = window.location.href;
+        if (currentUrl !== this.lastUrl) {
+          this.handleUrlChange(this.lastUrl, currentUrl);
+          this.lastUrl = currentUrl;
+        }
+      }, 500);
+    }
+
+    /**
+     * Handle URL changes and detect submission URLs.
+     * @param {string} oldUrl - Previous URL
+     * @param {string} newUrl - New URL
+     */
+    handleUrlChange(oldUrl, newUrl) {
+      console.log('🔄 LeetCode Tracker: URL changed from', oldUrl, 'to', newUrl);
+
+      // Check if we navigated to a submission URL
+      const submissionMatch = newUrl.match(/\/submissions\/(\d+)/);
+      const wasOnProblemPage = oldUrl.match(/\/problems\/[^/]+\/?$/) && !oldUrl.includes('/submissions/');
+
+      if (submissionMatch && wasOnProblemPage) {
+        const submissionId = submissionMatch[1];
+
+        // Check if we've already processed this submission
+        if (this.processedSubmissions.has(submissionId)) {
+          console.log('⏭️ LeetCode Tracker: Submission', submissionId, 'already processed, skipping');
+          return;
+        }
+
+        console.log('🎯 LeetCode Tracker: Detected submission via URL change! Submission ID:', submissionId);
+
+        // Mark as processed immediately to prevent duplicates
+        this.processedSubmissions.add(submissionId);
+
+        // Wait a bit for DOM to update, then check if it's accepted
+        setTimeout(async () => {
+          const resultElement = document.querySelector(domElements.submissionResult);
+
+          if (resultElement && resultElement.textContent === "Accepted") {
+            if (!this.isProcessingSubmission) {
+              console.log('✅ LeetCode Tracker: URL-detected submission is Accepted, processing...');
+              this.handleSubmission();
+            } else {
+              console.log('⏭️ LeetCode Tracker: Already processing a submission, skipping');
+            }
+          } else {
+            console.log('ℹ️ LeetCode Tracker: Submission detected but not accepted (or result not found yet)');
+            // Remove from processed set if it wasn't accepted so we can retry
+            this.processedSubmissions.delete(submissionId);
+          }
+        }, 1000);
       }
     }
 
@@ -65,14 +143,49 @@
      * 4. Track handler attachment state to prevent memory leaks
      */
     setupSubmitButton() {
-      const submitButton = document.querySelector(domElements.submitButton);
+      let submitButton = document.querySelector(domElements.submitButton);
 
-      if (this.clickHandlerAttached) {
+      // Try alternative selectors if main one fails
+      if (!submitButton && domElements.submitButtonAlternatives) {
+        console.log('⚠️ LeetCode Tracker: Primary submit button selector failed, trying alternatives...');
+        for (const selector of domElements.submitButtonAlternatives) {
+          submitButton = document.querySelector(selector);
+          if (submitButton) {
+            console.log('✅ LeetCode Tracker: Found submit button with alternative selector:', selector);
+            break;
+          }
+        }
+      }
+
+      // Try finding button by text content as last resort
+      if (!submitButton) {
+        console.log('⚠️ LeetCode Tracker: Trying to find submit button by text content...');
+        const buttons = Array.from(document.querySelectorAll('button'));
+        submitButton = buttons.find(btn =>
+          btn.textContent.trim().toLowerCase() === 'submit' ||
+          btn.textContent.trim().toLowerCase().includes('submit')
+        );
+        if (submitButton) {
+          console.log('✅ LeetCode Tracker: Found submit button by text content');
+        }
+      }
+
+      if (!submitButton) {
+        console.log('❌ LeetCode Tracker: Submit button not found with any selector');
+        // Use fallback: watch for submission results directly
+        this.watchForSubmissionResults();
+        return;
+      }
+
+      console.log('✅ LeetCode Tracker: Submit button found, attaching click handler');
+
+      if (this.clickHandlerAttached && this.submitClickHandler) {
         submitButton.removeEventListener("click", this.submitClickHandler);
         this.clickHandlerAttached = false;
       }
 
       this.submitClickHandler = () => {
+        console.log('🖱️ LeetCode Tracker: Submit button clicked');
         const existingResult = document.querySelector(
           domElements.submissionResult
         );
@@ -85,6 +198,47 @@
 
       submitButton.addEventListener("click", this.submitClickHandler);
       this.clickHandlerAttached = true;
+
+      // Also watch for submission results as a fallback
+      this.watchForSubmissionResults();
+    }
+
+    /**
+     * Watch for submission results appearing in the DOM as a fallback mechanism.
+     * This is used when the submit button click handler doesn't work.
+     */
+    watchForSubmissionResults() {
+      if (this.resultObserver) {
+        this.resultObserver.disconnect();
+      }
+
+      console.log('👁️ LeetCode Tracker: Watching for submission results...');
+
+      this.resultObserver = new MutationObserver((mutations) => {
+        const resultElement = document.querySelector(domElements.submissionResult);
+
+        if (resultElement && resultElement.textContent === "Accepted") {
+          // Get submission ID from URL to check if already processed
+          const submissionMatch = window.location.href.match(/\/submissions\/(\d+)/);
+          const submissionId = submissionMatch ? submissionMatch[1] : null;
+
+          // Check if we're already processing to avoid duplicates
+          if (!this.isProcessingSubmission && (!submissionId || !this.processedSubmissions.has(submissionId))) {
+            console.log('🎯 LeetCode Tracker: Detected "Accepted" result via MutationObserver');
+            if (submissionId) {
+              this.processedSubmissions.add(submissionId);
+            }
+            this.handleSubmission();
+          }
+        }
+      });
+
+      this.resultObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        characterDataOldValue: true
+      });
     }
 
     /**
