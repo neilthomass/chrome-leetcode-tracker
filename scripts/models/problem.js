@@ -14,6 +14,7 @@ export default class Problem {
     this.submissionDate = new Date();
     this.submissionId = "";
     this.apiData = null;
+    this.topicTags = [];
   }
 
   loadProblemFromURL() {
@@ -155,19 +156,49 @@ export default class Problem {
 
   /**
    * Fetch submission data from LeetCode API using submission ID.
+   * Uses GraphQL API to get complete data including topic tags.
    * @param {string} submissionId - The submission ID
    * @returns {Promise<Object|null>} Submission data or null if failed
    */
   async fetchSubmissionData(submissionId) {
     try {
-      const apiUrl = `https://leetcode.com/submissions/detail/${submissionId}/check/`;
-
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include' // Include cookies for authentication
+      const response = await fetch("https://leetcode.com/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          query: `
+            query submissionDetails($submissionId: Int!) {
+              submissionDetails(submissionId: $submissionId) {
+                runtime
+                runtimeDisplay
+                runtimePercentile
+                memory
+                memoryDisplay
+                memoryPercentile
+                code
+                timestamp
+                statusCode
+                lang {
+                  name
+                  verboseName
+                }
+                question {
+                  questionId
+                  titleSlug
+                }
+                topicTags {
+                  tagId
+                  slug
+                  name
+                }
+              }
+            }
+          `,
+          variables: {
+            submissionId: parseInt(submissionId),
+          },
+        }),
       });
 
       if (!response.ok) {
@@ -175,8 +206,39 @@ export default class Problem {
         return null;
       }
 
-      const data = await response.json();
-      console.log('📊 LeetCode Tracker: Fetched submission data:', data);
+      const result = await response.json();
+
+      if (result.errors) {
+        console.log('GraphQL errors:', result.errors);
+        return null;
+      }
+
+      if (!result.data || !result.data.submissionDetails) {
+        console.log('No submission details in response');
+        return null;
+      }
+
+      const details = result.data.submissionDetails;
+
+      // Transform to match expected format
+      const data = {
+        code: details.code,
+        status_msg: details.statusCode === 10 ? "Accepted" : "Not Accepted",
+        status_runtime: details.runtimeDisplay,
+        display_runtime: parseInt(details.runtime),
+        status_memory: details.memoryDisplay,
+        memory: parseInt(details.memory),
+        runtime_percentile: details.runtimePercentile,
+        memory_percentile: details.memoryPercentile,
+        pretty_lang: details.lang.verboseName,
+        submission_id: submissionId,
+        question_id: details.question.questionId,
+        topic_tags: details.topicTags,
+        finished: true,
+        state: 'SUCCESS'
+      };
+
+      console.log('📊 LeetCode Tracker: Fetched submission data from GraphQL:', data);
 
       return data;
     } catch (error) {
@@ -244,6 +306,12 @@ export default class Problem {
           console.log('🔍 LeetCode Tracker: Extracted problem ID from submission API:', this.id);
         }
 
+        // Extract topic tags if available
+        if (apiData.topic_tags && Array.isArray(apiData.topic_tags)) {
+          this.topicTags = apiData.topic_tags;
+          console.log('🏷️ LeetCode Tracker: Extracted topic tags:', this.topicTags.map(t => t.name).join(', '));
+        }
+
         console.log('✅ Extracted all data from API:', {
           language: this.language?.langName,
           runtime: this.runtime,
@@ -251,7 +319,8 @@ export default class Problem {
           runtimePercentile: this.runtimePercentile,
           memoryPercentile: this.memoryPercentile,
           submissionId: this.submissionId,
-          codeLength: this.code?.length
+          codeLength: this.code?.length,
+          topicTagsCount: this.topicTags?.length
         });
       }
     } catch (error) {

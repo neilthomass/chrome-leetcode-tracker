@@ -71,14 +71,15 @@ export default class GithubService {
 
     try {
       const fileExists = await this.checkFileExistence();
+      let result;
 
       if (fileExists && !this.syncMultipleSubmissionsSettingEnabled) {
         const currentContent = atob(fileExists.content);
         const newContent = this.getFormattedCode();
-        const result = await this.configurationService.getChromeStorageConfig([
+        const config = await this.configurationService.getChromeStorageConfig([
           "leetcode_tracker_code_submit",
         ]);
-        const skipDuplicates = result.leetcode_tracker_code_submit;
+        const skipDuplicates = config.leetcode_tracker_code_submit;
         const contentIsSame = !(await this.contentsDiffer(
           currentContent,
           newContent
@@ -86,13 +87,24 @@ export default class GithubService {
 
         // Skip update if setting is enabled and content hasn't changed
         if (skipDuplicates && contentIsSame) {
-          return;
+          console.log('Skipping upload - content unchanged');
+          return { skipped: true };
         }
 
-        await this.updateFile(fileExists);
+        result = await this.updateFile(fileExists);
       } else {
-        await this.createFile();
+        result = await this.createFile();
       }
+
+      // Verify the operation was successful
+      if (!result || (!result.ok && result.status !== 201)) {
+        throw new Error(`GitHub operation failed with status: ${result?.status}`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error submitting to GitHub:', error);
+      throw error;
     } finally {
       this.submissionInProgress = false;
     }
@@ -224,13 +236,12 @@ export default class GithubService {
    * @throws {Error} If problem object is missing or API request fails
    */
   async checkFileExistence(isSyncing = false) {
-    if (!this.problem) {
-      throw new Error("No problem set for file existence check");
-    }
-
-    const url = this.buildGitHubUrl(isSyncing);
-
     try {
+      if (!this.problem) {
+        throw new Error("No problem set for file existence check");
+      }
+
+      const url = this.buildGitHubUrl(isSyncing);
       const response = await this.fetchWithAuth(url, "GET");
 
       if (response.ok) {
@@ -239,15 +250,14 @@ export default class GithubService {
         // File doesn't exist, which is expected for new files
         return null;
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Failed to check file existence: ${response.status} - ${
-            errorData.message || "Unknown error"
-          }`
-        );
+        // GET request failed, but this is normal - treat as file not found
+        console.log(`GitHub GET request failed with status ${response.status}, treating as new file`);
+        return null;
       }
     } catch (error) {
-      throw error;
+      // Network error or other failure - treat as file not found
+      console.log('GitHub GET request error:', error.message);
+      return null;
     }
   }
 
@@ -312,6 +322,12 @@ export default class GithubService {
     // Add language
     if (this.problem.language && this.problem.language.langName) {
       header += `${commentFormat.linePrefix}Language: ${this.problem.language.langName}\n`;
+    }
+
+    // Add topic tags if available
+    if (this.problem.topicTags && this.problem.topicTags.length > 0) {
+      const tags = this.problem.topicTags.map(tag => tag.name).join(', ');
+      header += `${commentFormat.linePrefix}Topics: ${tags}\n`;
     }
 
     header += `${commentFormat.end}\n\n`;
@@ -588,7 +604,7 @@ export default class GithubService {
       throw new Error("Invalid repository configuration");
     }
 
-    return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${languageFolder}/${fileName}`;
+    return `${this.dataConfig.REPOSITORY_URL}${parsedRepo.username}/${parsedRepo.repositoryName}/contents/${languageFolder}/${encodeURIComponent(fileName)}`;
   }
 
 

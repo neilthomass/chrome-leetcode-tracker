@@ -373,6 +373,7 @@ export default class LeetCodeService {
           code: details.code,
           timestamp: details.timestamp,
           lang: lang,
+          topicTags: details.topicTags || [],
         };
       }
 
